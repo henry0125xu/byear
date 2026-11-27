@@ -1,0 +1,20 @@
+{
+  "name": "byear",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.4.0"
+  },
+  "dependencies": {
+    "smplr": "^1.2.1",
+    "soundtouchjs": "^0.3.0",
+    "tonal": "^6.14.0"
+  }
+}

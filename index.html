@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ByEar</title>
+  </head>
+  <body>
+    <header class="top">
+      <h1>ByEar</h1>
+      <label class="file-btn">
+        Open audio…
+        <input id="file" type="file" accept="audio/*" hidden />
+      </label>
+      <span id="file-name" class="muted">Drop an audio file anywhere</span>
+    </header>
+
+    <section class="panel">
+      <canvas id="wave"></canvas>
+      <div class="transport">
+        <button id="play" title="Play / Pause (Space)">▶</button>
+        <button id="stop" title="Stop (Esc)">■</button>
+        <span id="time" class="mono">0:00.0 / 0:00.0</span>
+        <span class="sep"></span>
+        <button id="set-a" title="Set A at playhead ([)">A</button>
+        <button id="set-b" title="Set B at playhead (])">B</button>
+        <button id="loop" title="Toggle loop (L)">Loop</button>
+        <span id="loop-info" class="mono muted"></span>
+      </div>
+    </section>
+
+    <section class="panel controls">
+      <div class="ctl">
+        <label>Speed <span id="speed-val" class="mono">100%</span></label>
+        <input id="speed" type="range" min="25" max="125" step="1" value="100" />
+        <div class="presets">
+          <button data-speed="100">100</button>
+          <button data-speed="75">75</button>
+          <button data-speed="50">50</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label>Transpose <span id="semi-val" class="mono">0</span> st</label>
+        <input id="semi" type="range" min="-12" max="12" step="1" value="0" />
+      </div>
+      <div class="ctl">
+        <label>Fine-tune <span id="cents-val" class="mono">0</span> ¢</label>
+        <input id="cents" type="range" min="-50" max="50" step="1" value="0" />
+      </div>
+      <div class="ctl">
+        <label>Recording vol</label>
+        <input id="rec-vol" type="range" min="0" max="100" value="80" />
+      </div>
+      <div class="ctl">
+        <label>Tone vol <span id="tone-vol-val" class="mono">120%</span></label>
+        <input id="tone-vol" type="range" min="0" max="200" value="120" />
+      </div>
+      <div class="ctl">
+        <label>Sound</label>
+        <select id="instrument">
+          <option value="piano">Piano</option>
+          <option value="guitar">Guitar</option>
+        </select>
+        <label class="inline"><input id="strum" type="checkbox" /> Strum</label>
+        <span id="sample-status" class="muted small"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <form id="chord-form" class="chord-form">
+        <input id="chord-input" placeholder="Chord, e.g. Am7, F#maj7, G/B" autocomplete="off" />
+        <button type="submit">Add</button>
+        <span id="chord-error" class="error small"></span>
+      </form>
+      <div id="chords" class="chords"></div>
+    </section>
+
+    <section class="panel">
+      <div class="pad-head">
+        <span class="muted small">Notes</span>
+        <button id="pad-toggle" class="small" title="Switch note view">Piano view</button>
+      </div>
+      <div id="note-grid"></div>
+      <div id="piano" hidden></div>
+    </section>
+
+    <footer class="muted small">
+      Space play/pause · Esc stop · [ ] set A/B · L loop · ←/→ seek 2s · Enter jump to A · 1–9 play chord
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
