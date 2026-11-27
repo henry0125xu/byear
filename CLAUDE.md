@@ -23,6 +23,7 @@ A personal web app for transcribing songs by ear (guitar-oriented) while trainin
 ```sh
 npm install
 npm run dev        # Vite dev server, http://localhost:5173
+dev.cmd            # same, for double-clicking on Windows: installs deps if missing, opens the browser
 npx tsc -p .       # typecheck (run after every change; there are no tests yet)
 npm run build      # tsc + vite build → dist/
 ```
