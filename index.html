@@ -38,6 +38,12 @@
           <button data-speed="75">75</button>
           <button data-speed="50">50</button>
         </div>
+        <select id="engine" class="small" title="Time-stretch engine">
+          <option value="rubberband-hq">Rubber Band HQ</option>
+          <option value="rubberband">Rubber Band (lighter)</option>
+          <option value="soundtouch">SoundTouch</option>
+        </select>
+        <span id="engine-status" class="muted small"></span>
       </div>
       <div class="ctl">
         <label>Transpose <span id="semi-val" class="mono">0</span> st</label>
@@ -57,10 +63,7 @@
       </div>
       <div class="ctl">
         <label>Sound</label>
-        <select id="instrument">
-          <option value="piano">Piano</option>
-          <option value="guitar">Guitar</option>
-        </select>
+        <select id="instrument"></select>
         <label class="inline"><input id="strum" type="checkbox" /> Strum</label>
         <span id="sample-status" class="muted small"></span>
       </div>

@@ -1,6 +1,7 @@
 import "./style.css";
 import { Player } from "./audio/player";
-import { Tones, type InstrumentId } from "./audio/tones";
+import type { EngineId } from "./audio/stretch";
+import { INSTRUMENTS, isGuitar, isInstrumentId, Tones, type InstrumentId } from "./audio/tones";
 import { guitarVoicing, parseChord, pianoVoicing, type ParsedChord } from "./music/chords";
 import { NoteGrid } from "./ui/noteGrid";
 import { Piano } from "./ui/piano";
@@ -151,6 +152,29 @@ document.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach((btn) =>
   }),
 );
 
+// Time-stretch engine (remembered). Rubber Band loads its WASM on first use.
+const ENGINE_KEY = "byear.engine";
+const ENGINES: EngineId[] = ["rubberband", "rubberband-hq", "soundtouch"];
+const engineEl = $<HTMLSelectElement>("engine");
+function selectEngine(id: EngineId): void {
+  const status = $("engine-status");
+  status.textContent = id === "soundtouch" ? "" : "loading…";
+  player
+    .setEngine(id)
+    .then(() => {
+      status.textContent = "";
+      localStorage.setItem(ENGINE_KEY, id);
+    })
+    .catch(() => {
+      status.textContent = "Rubber Band failed to load; using SoundTouch";
+      engineEl.value = player.engine;
+    });
+}
+engineEl.addEventListener("change", () => selectEngine(engineEl.value as EngineId));
+const savedEngine = localStorage.getItem(ENGINE_KEY) as EngineId | null;
+engineEl.value = savedEngine && ENGINES.includes(savedEngine) ? savedEngine : "rubberband-hq";
+selectEngine(engineEl.value as EngineId);
+
 // Test tones follow the recording's transpose + fine-tune, so labels stay in the original key.
 function syncDetune(): void {
   tones.detuneCents = player.pitchOffsetCents;
@@ -171,13 +195,23 @@ bindRange("tone-vol", (v) => {
   $("tone-vol-val").textContent = `${v}%`;
 });
 
+// Sound (remembered). Switching to a guitar sound turns strum on; to piano, off.
+const INSTRUMENT_KEY = "byear.instrument";
 const instrumentEl = $<HTMLSelectElement>("instrument");
 const strumEl = $<HTMLInputElement>("strum");
+instrumentEl.replaceChildren(
+  ...Object.entries(INSTRUMENTS).map(([id, { label }]) => new Option(label, id)),
+);
+const savedInstrument = localStorage.getItem(INSTRUMENT_KEY);
+tones.current = isInstrumentId(savedInstrument) ? savedInstrument : "piano";
+instrumentEl.value = tones.current;
+strumEl.checked = isGuitar(tones.current);
 instrumentEl.addEventListener("change", () => {
+  const wasGuitar = isGuitar(tones.current);
   tones.current = instrumentEl.value as InstrumentId;
-  strumEl.checked = tones.current === "guitar";
-  loadInstrument(tones.current);
-  renderChords();
+  if (isGuitar(tones.current) !== wasGuitar) strumEl.checked = isGuitar(tones.current);
+  localStorage.setItem(INSTRUMENT_KEY, tones.current);
+  if (unlocked) loadInstrument(tones.current);
 });
 
 // ---------- note pad: plain grid (default) or piano ----------
@@ -209,7 +243,7 @@ setPadView(localStorage.getItem(PAD_KEY) === "piano" ? "piano" : "grid");
 const chords: ParsedChord[] = [];
 
 function voicing(c: ParsedChord): number[] {
-  return tones.current === "guitar" ? guitarVoicing(c) : pianoVoicing(c);
+  return isGuitar(tones.current) ? guitarVoicing(c) : pianoVoicing(c);
 }
 function playChord(c: ParsedChord): void {
   const notes = voicing(c);

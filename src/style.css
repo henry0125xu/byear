@@ -66,6 +66,11 @@ button, select, .file-btn {
   padding: 4px 10px;
   cursor: pointer;
 }
+
+/* The option popup is drawn by the OS: give it solid colours, or it inherits
+   light text on the system's light background in dark mode. */
+select { background: var(--panel); }
+select option { background: var(--panel); color: var(--text); }
 button:hover, .file-btn:hover { border-color: var(--accent); }
 button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 

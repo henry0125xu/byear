@@ -1,15 +1,37 @@
-import { CacheStorage, Soundfont } from "smplr";
+import { CacheStorage, ElectricPiano, Soundfont } from "smplr";
 
-export type InstrumentId = "piano" | "guitar";
+/**
+ * Test-tone sounds. `guitar` ones get the guitar voicing and strum by default.
+ * `kit: "epiano"` uses smplr's ElectricPiano (multi-sampled recordings);
+ * everything else is a General MIDI soundfont.
+ */
+export const INSTRUMENTS = {
+  piano: { label: "Piano", sample: "acoustic_grand_piano", kit: "MusyngKite", guitar: false },
+  "ep-rhodes": { label: "E.Piano · Rhodes-like", sample: "electric_piano_1", kit: "MusyngKite", guitar: false },
+  "ep-wurli": { label: "E.Piano · Wurlitzer", sample: "WurlitzerEP200", kit: "epiano", guitar: false },
+  "ep-cp80": { label: "E.Piano · CP80", sample: "CP80", kit: "epiano", guitar: false },
+  "ep-fm": { label: "E.Piano · FM (TX81Z)", sample: "TX81Z", kit: "epiano", guitar: false },
+  "guitar-steel": { label: "Guitar · steel", sample: "acoustic_guitar_steel", kit: "MusyngKite", guitar: true },
+  "guitar-steel-fluid": { label: "Guitar · steel (FluidR3)", sample: "acoustic_guitar_steel", kit: "FluidR3_GM", guitar: true },
+  "guitar-nylon": { label: "Guitar · nylon", sample: "acoustic_guitar_nylon", kit: "MusyngKite", guitar: true },
+  "guitar-clean": { label: "Electric · clean", sample: "electric_guitar_clean", kit: "MusyngKite", guitar: true },
+  "guitar-jazz": { label: "Electric · jazz", sample: "electric_guitar_jazz", kit: "MusyngKite", guitar: true },
+  "guitar-overdrive": { label: "Electric · overdrive", sample: "overdriven_guitar", kit: "MusyngKite", guitar: true },
+  "guitar-distortion": { label: "Electric · distortion", sample: "distortion_guitar", kit: "MusyngKite", guitar: true },
+} as const;
 
-const SOUNDFONT_NAME: Record<InstrumentId, string> = {
-  piano: "acoustic_grand_piano",
-  guitar: "acoustic_guitar_steel",
-};
+export type InstrumentId = keyof typeof INSTRUMENTS;
+
+export function isInstrumentId(v: string | null): v is InstrumentId {
+  return v !== null && v in INSTRUMENTS;
+}
+export function isGuitar(id: InstrumentId): boolean {
+  return INSTRUMENTS[id].guitar;
+}
 
 const STRUM_GAP = 0.025; // seconds between strings
 
-type Instrument = ReturnType<typeof Soundfont>;
+type Instrument = ReturnType<typeof Soundfont> | ReturnType<typeof ElectricPiano>;
 
 /** Sampled test tones. Detune follows the recording's transpose + fine-tune. */
 export class Tones {
@@ -36,13 +58,14 @@ export class Tones {
   load(id: InstrumentId): Promise<Instrument> {
     let p = this.instruments.get(id);
     if (!p) {
-      const inst = Soundfont(this.ctx, {
-        instrument: SOUNDFONT_NAME[id],
-        kit: "MusyngKite",
-        destination: this.volume,
-        storage: this.storage,
-      });
+      const { sample, kit } = INSTRUMENTS[id];
+      const common = { destination: this.volume, storage: this.storage };
+      const inst: Instrument =
+        kit === "epiano"
+          ? ElectricPiano(this.ctx, { ...common, instrument: sample })
+          : Soundfont(this.ctx, { ...common, instrument: sample, kit });
       p = inst.ready.then(() => inst);
+      p.catch(() => this.instruments.delete(id)); // allow a retry
       this.instruments.set(id, p);
     }
     return p;

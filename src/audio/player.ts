@@ -1,17 +1,33 @@
-import { SimpleFilter, SoundTouch, type SampleSource } from "soundtouchjs";
+import {
+  loadRubberBand,
+  RubberBandStretcher,
+  SoundTouchStretcher,
+  type EngineId,
+  type FrameSource,
+  type Stretcher,
+} from "./stretch";
+import type { RubberBandInterface } from "rubberband-wasm";
 
 const BLOCK = 4096;
 
 /**
  * Reads frames from an AudioBuffer, keeping its own read head and wrapping
- * inside the A/B loop. SoundTouch pulls from this; it ignores the position
- * argument SimpleFilter passes in.
+ * inside the A/B loop. The stretcher pulls from this (SoundTouch's position
+ * argument is ignored).
+ *
+ * It also remembers where each run of frames came from, so "n frames handed
+ * out since the last seek" can be mapped back to a file position even across
+ * loop wraps (see `positionAt`).
  */
-class LoopSource implements SampleSource {
+class LoopSource implements FrameSource {
   pos = 0;
   loopA = 0;
   loopB = 0;
   loopOn = false;
+  /** Frames handed out since the last seek. */
+  fed = 0;
+  /** Runs of contiguous frames: handed-out index `cum` came from file frame `src`. */
+  private runs: { cum: number; src: number }[] = [{ cum: 0, src: 0 }];
   private left: Float32Array;
   private right: Float32Array;
 
@@ -24,15 +40,54 @@ class LoopSource implements SampleSource {
     return this.loopOn && this.loopB - this.loopA > 64;
   }
 
+  seek(frame: number): void {
+    this.pos = Math.max(0, Math.min(this.left.length, Math.round(frame)));
+    this.fed = 0;
+    this.runs = [{ cum: 0, src: this.pos }];
+  }
+
+  /** File frame of the `cum`-th frame handed out since the last seek. */
+  positionAt(cum: number): number {
+    cum = Math.max(0, cum);
+    for (let i = this.runs.length - 1; i >= 0; i--) {
+      const run = this.runs[i];
+      if (run.cum <= cum) return Math.min(this.left.length, run.src + (cum - run.cum));
+    }
+    return this.runs[0].src;
+  }
+
+  /** Advances the read head by one frame; returns the frame index, or -1 at the end. */
+  private next(): number {
+    if (this.loopActive && this.pos >= this.loopB) {
+      this.pos = this.loopA;
+      this.runs.push({ cum: this.fed, src: this.pos });
+      // Keep a few seconds of history; nothing buffered is older than that.
+      const keepFrom = this.fed - 10 * this.buffer.sampleRate;
+      while (this.runs.length > 1 && this.runs[1].cum < keepFrom) this.runs.shift();
+    }
+    if (this.pos >= this.left.length) return -1;
+    this.fed++;
+    return this.pos++;
+  }
+
   extract(target: Float32Array, numFrames: number): number {
-    const len = this.left.length;
     let i = 0;
     for (; i < numFrames; i++) {
-      if (this.loopActive && this.pos >= this.loopB) this.pos = this.loopA;
-      if (this.pos >= len) break;
-      target[i * 2] = this.left[this.pos];
-      target[i * 2 + 1] = this.right[this.pos];
-      this.pos++;
+      const p = this.next();
+      if (p < 0) break;
+      target[i * 2] = this.left[p];
+      target[i * 2 + 1] = this.right[p];
+    }
+    return i;
+  }
+
+  readPlanar(l: Float32Array, r: Float32Array, n: number): number {
+    let i = 0;
+    for (; i < n; i++) {
+      const p = this.next();
+      if (p < 0) break;
+      l[i] = this.left[p];
+      r[i] = this.right[p];
     }
     return i;
   }
@@ -41,10 +96,10 @@ class LoopSource implements SampleSource {
 export class Player {
   readonly output: GainNode;
   private source: LoopSource | null = null;
-  private st = new SoundTouch();
-  private filter: SimpleFilter | null = null;
+  private stretcher: Stretcher | null = null;
   private node: ScriptProcessorNode;
-  private samples = new Float32Array(BLOCK * 2);
+  private _engine: EngineId = "soundtouch";
+  private rb: RubberBandInterface | null = null;
   private _playing = false;
   private _speed = 1;
   private _semitones = 0;
@@ -62,9 +117,7 @@ export class Player {
     this._playing = false;
     this.source = new LoopSource(buffer);
     this.source.loopB = buffer.length;
-    this.st = new SoundTouch();
-    this.filter = new SimpleFilter(this.source, this.st);
-    this.applyStretch();
+    this.replaceStretcher();
   }
 
   get buffer(): AudioBuffer | null {
@@ -77,9 +130,36 @@ export class Player {
     return this._playing;
   }
 
+  // ---- engine ----
+  get engine(): EngineId {
+    return this._engine;
+  }
+  /** Switches the time-stretch engine, keeping the audible position. Rejects if Rubber Band fails to load. */
+  async setEngine(id: EngineId): Promise<void> {
+    if (id !== "soundtouch") this.rb = await loadRubberBand();
+    if (id === this._engine) return;
+    const heard = this.currentTime;
+    this._engine = id;
+    if (!this.source) return;
+    this.replaceStretcher();
+    this.seek(heard);
+  }
+
+  private replaceStretcher(): void {
+    const s = this.source;
+    if (!s) return;
+    this.stretcher?.dispose();
+    this.stretcher =
+      this._engine !== "soundtouch" && this.rb
+        ? new RubberBandStretcher(this.rb, s, s.buffer.sampleRate, this._engine === "rubberband-hq")
+        : new SoundTouchStretcher(s);
+    this.applyStretch();
+  }
+
+  // ---- transport ----
   play(): void {
     if (!this.source) return;
-    if (this.source.pos >= this.source.buffer.length) this.seek(0);
+    if (this.source.pos >= this.source.buffer.length && !this.source.loopActive) this.seek(0);
     if (this.source.loopActive && this.currentTime >= this.loop.b) this.seek(this.loop.a);
     this._playing = true;
   }
@@ -92,21 +172,17 @@ export class Player {
   }
 
   seek(seconds: number): void {
-    if (!this.source || !this.filter) return;
-    const sr = this.source.buffer.sampleRate;
-    this.source.pos = Math.max(0, Math.min(this.source.buffer.length, Math.round(seconds * sr)));
-    this.filter.clear();
+    if (!this.source || !this.stretcher) return;
+    this.source.seek(seconds * this.source.buffer.sampleRate);
+    this.stretcher.clear();
   }
 
-  /** Approximate audible position: read head minus what is still buffered in the stretcher. */
+  /** Audible position: frames handed to the stretcher, minus what it still holds and the output block. */
   get currentTime(): number {
-    if (!this.source || !this.filter) return 0;
-    const sr = this.source.buffer.sampleRate;
-    const pendingOut = this.filter.outputBuffer.frameCount - this.filter.outputBufferPosition;
-    const buffered = this.st.inputBuffer.frameCount + (pendingOut + (this._playing ? BLOCK : 0)) * this._speed;
-    let pos = this.source.pos - buffered;
-    if (this.source.loopActive && pos < this.source.loopA) pos += this.source.loopB - this.source.loopA;
-    return Math.max(0, pos / sr);
+    const s = this.source;
+    if (!s || !this.stretcher) return 0;
+    const lag = this.stretcher.pending + (this._playing ? BLOCK * this._speed : 0);
+    return s.positionAt(s.fed - lag) / s.buffer.sampleRate;
   }
 
   // ---- loop ----
@@ -119,7 +195,7 @@ export class Player {
   setLoop(a: number, b: number): void {
     const s = this.source;
     if (!s) return;
-    const heard = this.currentTime; // read before the loop changes (currentTime depends on it)
+    const heard = this.currentTime; // read before the loop changes
     const sr = s.buffer.sampleRate;
     const [lo, hi] = a <= b ? [a, b] : [b, a];
     s.loopA = Math.max(0, Math.round(lo * sr));
@@ -174,23 +250,18 @@ export class Player {
   }
 
   private applyStretch(): void {
-    this.st.tempo = this._speed;
-    this.st.pitch = Math.pow(2, this.pitchOffsetCents / 1200);
+    this.stretcher?.setRate(this._speed, Math.pow(2, this.pitchOffsetCents / 1200));
   }
 
   private process(e: AudioProcessingEvent): void {
     const l = e.outputBuffer.getChannelData(0);
     const r = e.outputBuffer.getChannelData(1);
-    if (!this._playing || !this.filter) {
+    if (!this._playing || !this.stretcher) {
       l.fill(0);
       r.fill(0);
       return;
     }
-    const n = this.filter.extract(this.samples, BLOCK);
-    for (let i = 0; i < n; i++) {
-      l[i] = this.samples[i * 2];
-      r[i] = this.samples[i * 2 + 1];
-    }
+    const n = this.stretcher.extract(l, r, BLOCK);
     l.fill(0, n);
     r.fill(0, n);
     if (n === 0) {

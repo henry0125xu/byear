@@ -31,8 +31,9 @@ npm run build      # tsc + vite build → dist/
 ## Stack
 
 - TypeScript + Vite, plain DOM (no framework). Svelte remains an option if the UI grows.
-- `soundtouchjs`: time-stretch and pitch shift. There are no upstream types; see [src/soundtouch.d.ts](src/soundtouch.d.ts).
-- `smplr`: soundfont samples (MusyngKite, loaded from gleitz.github.io on first use, then cached via CacheStorage).
+- `rubberband-wasm`: Rubber Band (GPL) time-stretch and pitch shift, real-time mode, driven synchronously from the audio callback. Default engine is R3 "HQ"; R2 is the lighter option.
+- `soundtouchjs`: the fallback engine. There are no upstream types; see [src/soundtouch.d.ts](src/soundtouch.d.ts).
+- `smplr`: soundfont samples (MusyngKite / FluidR3, from gleitz.github.io) and multi-sampled electric pianos (from smpldsnds.github.io), loaded on first use, then cached via CacheStorage.
 - `tonal`: chord parsing and note math.
 - `vite.config.ts` sets `base: "./"` so the build can be served from GitHub Pages (decided hosting; not set up yet).
 
@@ -41,8 +42,9 @@ npm run build      # tsc + vite build → dist/
 | File | Role |
 |------|------|
 | [src/main.ts](src/main.ts) | Wires everything: file loading, transport, sliders, chord buttons, shortcuts, render loop |
-| [src/audio/player.ts](src/audio/player.ts) | `Player`: `LoopSource` (own read head, wraps at A/B) → SoundTouch `SimpleFilter` → ScriptProcessor → `output` gain |
-| [src/audio/tones.ts](src/audio/tones.ts) | `Tones`: smplr instruments → `volume` gain (0–2) → limiter (`output`) |
+| [src/audio/player.ts](src/audio/player.ts) | `Player`: `LoopSource` (own read head, wraps at A/B) → `Stretcher` → ScriptProcessor → `output` gain |
+| [src/audio/stretch.ts](src/audio/stretch.ts) | `Stretcher` interface; `RubberBandStretcher` (R2 / R3 HQ) and `SoundTouchStretcher`. Engine choice in localStorage `byear.engine` |
+| [src/audio/tones.ts](src/audio/tones.ts) | `Tones`: smplr instruments (`INSTRUMENTS`: piano, electric pianos via `ElectricPiano`, several guitar sounds) → `volume` gain (0–2) → limiter (`output`). Choice in localStorage `byear.instrument` |
 | [src/music/chords.ts](src/music/chords.ts) | `parseChord`, `pianoVoicing`, `guitarVoicing` |
 | [src/ui/waveform.ts](src/ui/waveform.ts) | Canvas waveform: click to seek, drag to make a loop, drag edges to adjust |
 | [src/ui/noteGrid.ts](src/ui/noteGrid.ts) | Default low-key note picker (octave rows × 12 boxes, 4 octaves visible) |
@@ -50,7 +52,9 @@ npm run build      # tsc + vite build → dist/
 
 ## Things that are easy to get wrong
 
-- **The read head runs ahead of the audio you hear.** SoundTouch buffers about 0.4 s or more of source audio. `Player.currentTime` estimates the audible position by subtracting the buffered amount. Any logic about "where the user is" must use `currentTime`, not `LoopSource.pos`.
+- **The read head runs ahead of the audio you hear.** The stretcher buffers source audio. `Player.currentTime` takes the frames handed out since the last seek (`LoopSource.fed`), subtracts `Stretcher.pending` and the output block, and maps the result back through `LoopSource.positionAt` (which records each loop wrap). Any logic about "where the user is" must use `currentTime`, not `LoopSource.pos`.
+- **Rubber Band alignment.** After every reset, `RubberBandStretcher.clear` feeds the preferred start pad of silence and discards the start delay, so output lines up with the seek point. `pending` is only right if that is kept.
+- **CPU.** Rubber Band runs on the main thread inside the ScriptProcessor callback (block = 4096 frames ≈ 93 ms). In Node, R3 HQ used about 25% of a core with a worst block of about 50–70 ms at 50% speed; R2 about 10%. If the user hears crackles, suggest the lighter engine, and treat it as a reason to move to an AudioWorklet.
 - **Loop changes resync the buffer.** `setLoop` and `setLoopOn` read `currentTime` *before* they change the loop (the estimate depends on the loop), then call `resyncToLoop`. Without that, the first pass plays past B. Keep this when touching loop code.
 - **Test tones follow the recording's pitch offset.** `tones.detuneCents = player.pitchOffsetCents` (transpose and cents). Chord and note labels always stay in the original key (Decision #2).
 - **Slash chords are split by hand** in `parseChord`, because tonal measures `G/B` intervals from the bass. `C6/9` is a chord type, not a slash chord.
@@ -71,7 +75,7 @@ Done:
 
 Remaining for v0.1:
 - Nudge loop edges with shortcuts; optional pre-roll before A
-- User still to judge: SoundTouch quality at 50% (if poor → try Rubber Band WASM), guitar sample realism, loop seam, playhead accuracy
+- User judged (2026-11-27): SoundTouch at 50% sounded worse than YouTube → switched to Rubber Band (Decision #6), user still to confirm by ear. Guitar samples "OK" → more guitar sounds added to try. Loop seam and playhead: fine.
 - Tech debt: ScriptProcessorNode is deprecated → move to AudioWorklet once the prototype is accepted
 - GitHub Pages deploy (needs a remote repo from the user)
 
