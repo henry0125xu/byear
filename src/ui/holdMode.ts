@@ -1,6 +1,5 @@
 import type { Player } from "../audio/player";
 import type { HeldNotes } from "../audio/tones";
-import type { ParsedChord } from "../music/chords";
 
 /** How far ahead a strike is scheduled (seconds of context time). */
 export const LOOKAHEAD = 0.15;
@@ -33,9 +32,9 @@ export function sameStrikeWindow(loop: { a: number; b: number }, speed: number):
  * after they are rendered; a strike for "A is heard in s seconds" is rendered
  * at now + s − latency.
  */
-export class HoldMode {
+export class HoldMode<Chord> {
   private _enabled = false;
-  private latched: { index: number; chord: ParsedChord } | null = null;
+  private latched: { index: number; chord: Chord } | null = null;
   private ringing: HeldNotes | null = null;
   private lastStrike = -Infinity;
   private timer = 0;
@@ -44,7 +43,7 @@ export class HoldMode {
     private ctx: AudioContext,
     private player: Player,
     /** Plays `chord` starting at context time `at`, sounding until released. */
-    private strike: (chord: ParsedChord, at: number) => HeldNotes,
+    private strike: (chord: Chord, at: number) => HeldNotes,
     /** The latched button changed (index, or null). */
     private onLatch: (index: number | null) => void,
   ) {}
@@ -62,7 +61,7 @@ export class HoldMode {
   }
 
   /** Click on chord `index`: latch it, switch to it, or release it if it is the latched one. */
-  toggle(index: number, chord: ParsedChord): void {
+  toggle(index: number, chord: Chord): void {
     if (this.latched?.index === index) return this.unlatch();
     this.latched = { index, chord };
     this.strikeAt(this.ctx.currentTime);

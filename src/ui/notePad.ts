@@ -10,13 +10,18 @@ export interface NotePad {
   press(midi: number): HeldNotes;
   /** Key labels for play mode (null to clear); also scrolls the grid to show them. */
   setKeyLabels(labels: Map<number, string> | null): void;
+  /** While set, every played note (mouse or keyboard) is also passed here (manual chord builder). */
+  setPicker(onNote: ((midi: number) => void) | null): void;
+  setPicked(midis: ReadonlySet<number>): void;
 }
 
 /** Note picker: the plain grid (default, low-key) or the piano, toggle remembered. */
 export function setupNotePad(tones: Tones): NotePad {
+  let picker: ((midi: number) => void) | null = null;
   function playNote(midi: number): void {
     releaseOnPointerUp(tones.start([midi]));
     pad.flash([midi]);
+    picker?.(midi);
   }
   const noteGrid = new NoteGrid($("note-grid"), playNote);
   const piano = new Piano($("piano"), playNote);
@@ -50,6 +55,7 @@ export function setupNotePad(tones: Tones): NotePad {
     press(midi) {
       const held = tones.start([midi]);
       setHeld(midi, 1);
+      picker?.(midi);
       let released = false;
       return {
         release() {
@@ -59,6 +65,13 @@ export function setupNotePad(tones: Tones): NotePad {
           setHeld(midi, -1);
         },
       };
+    },
+    setPicker(onNote) {
+      picker = onNote;
+    },
+    setPicked(midis) {
+      noteGrid.setPicked(midis);
+      piano.setPicked(midis);
     },
     setKeyLabels(labels) {
       noteGrid.setKeyLabels(labels);

@@ -38,14 +38,14 @@ export function setupWorkspace(transport: Transport, controls: Controls, chords:
       file: { name: current.name, duration: current.duration },
       loop: current.loop(),
       ...controls.song(),
-      chords: chords.symbols().map((symbol) => ({ symbol })),
+      chords: chords.entries(),
     };
   }
 
   function apply(ws: Workspace): void {
     transport.applyLoop(ws.loop);
     controls.applySong(ws);
-    chords.applySymbols(ws.chords.map((c) => c.symbol));
+    chords.applyEntries(ws.chords);
   }
 
   function save(): void {

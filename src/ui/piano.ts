@@ -37,6 +37,11 @@ export class Piano {
     this.keys.get(midi)?.classList.toggle("held", held);
   }
 
+  /** Marks the notes picked in the manual chord builder. */
+  setPicked(midis: ReadonlySet<number>): void {
+    for (const [midi, el] of this.keys) el.classList.toggle("picked", midis.has(midi));
+  }
+
   flash(midis: number[], ms = 400): void {
     for (const m of midis) {
       const el = this.keys.get(m);

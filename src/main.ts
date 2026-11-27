@@ -3,6 +3,7 @@ import "./style.css";
 import { Drone } from "./audio/drone";
 import { Player } from "./audio/player";
 import { Tones } from "./audio/tones";
+import { setupBuilder } from "./ui/builderPanel";
 import { setupChordPanel } from "./ui/chordPanel";
 import { setupControls } from "./ui/controls";
 import { setupFileInput } from "./ui/fileInput";
@@ -34,6 +35,7 @@ const transport = setupTransport(player);
 const controls = setupControls(ctx, player, tones, drone, () => unlocked);
 const pad = setupNotePad(tones);
 const chords = setupChordPanel(ctx, player, tones, pad, () => controls.strum);
+setupBuilder(chords, pad);
 const workspace = setupWorkspace(transport, controls, chords);
 setupShortcuts(transport, chords, pad);
 setupFileInput(ctx, (buffer, file) => {

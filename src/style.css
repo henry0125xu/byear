@@ -149,6 +149,15 @@ input[type="text"], #chord-input {
 .cell.empty { visibility: hidden; }
 .cell.active, .cell.held { background: var(--accent); border-color: var(--accent); color: #fff; }
 .cell { position: relative; }
+.builder { margin: 4px 0 10px; display: flex; flex-direction: column; gap: 6px; }
+.builder[hidden] { display: none; }
+.builder-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.builder-row .row-head { width: 34px; }
+.builder .ext { display: inline-flex; gap: 6px; }
+.builder .b-label { min-width: 90px; font-weight: 600; }
+.builder .p-notes { min-width: 120px; }
+.chord.custom { border-style: dashed; }
+.cell.picked, .key.picked { outline: 2px solid var(--accent); outline-offset: -2px; }
 .chord.latched { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); }
 .cell .keylabel {
   position: absolute; top: 1px; right: 3px;

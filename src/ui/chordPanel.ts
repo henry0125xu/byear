@@ -1,6 +1,8 @@
 import type { Player } from "../audio/player";
 import { isGuitar, type HeldNotes, type Tones } from "../audio/tones";
 import { guitarVoicing, parseChord, pianoVoicing, type ParsedChord } from "../music/chords";
+import { Midi } from "tonal";
+import type { ChordEntry } from "../workspace/workspace";
 import { workspaceChanged } from "./changes";
 import { $, releaseOnPointerUp } from "./dom";
 import { HoldMode } from "./holdMode";
@@ -13,10 +15,22 @@ export interface ChordPanel {
    * it and returns null. Also null if there is no such button.
    */
   press(index: number): HeldNotes | null;
-  symbols(): string[];
-  /** Replaces all chord buttons without notifying (restoring a workspace). Unknown symbols are skipped. */
-  applySymbols(symbols: string[]): void;
+  /** Adds a chord button (from the symbol form or the builder) and previews it. */
+  add(entry: ChordEntry): void;
+  /** Plays notes for 2 s with the current strum setting (builder preview). */
+  preview(notes: number[]): void;
+  entries(): ChordEntry[];
+  /** Replaces all chord buttons without notifying (restoring a workspace). Unusable entries are skipped. */
+  applyEntries(entries: ChordEntry[]): void;
 }
+
+interface Button {
+  entry: ChordEntry;
+  /** Parsed symbol; null for builder chords whose name is only a label. */
+  parsed: ParsedChord | null;
+}
+
+const noteNames = (midis: number[]) => midis.map((m) => Midi.midiToNoteName(m, { sharps: true })).join(" ");
 
 /** Chord entry form, the row of chord buttons, and hold mode. */
 export function setupChordPanel(
@@ -26,46 +40,56 @@ export function setupChordPanel(
   pad: NotePad,
   isStrum: () => boolean,
 ): ChordPanel {
-  const chords: ParsedChord[] = [];
+  const chords: Button[] = [];
   const buttons: HTMLElement[] = [];
 
-  function voicing(c: ParsedChord): number[] {
-    return isGuitar(tones.current) ? guitarVoicing(c) : pianoVoicing(c);
+  /** A builder voicing is played as built; a symbol follows the sound (guitar or piano voicing). */
+  function notesOf(b: Button): number[] {
+    if (b.entry.voicing) return b.entry.voicing;
+    if (!b.parsed) return [];
+    return isGuitar(tones.current) ? guitarVoicing(b.parsed) : pianoVoicing(b.parsed);
   }
-  /** Starts a chord (now, or at context time `at`); it sounds until `release()` unless `duration` is given. */
-  function play(c: ParsedChord, opts: { duration?: number; at?: number } = {}): HeldNotes {
-    const notes = voicing(c);
+
+  /** Starts notes (now, or at context time `at`); they sound until `release()` unless `duration` is given. */
+  function playNotes(notes: number[], opts: { duration?: number; at?: number } = {}): HeldNotes {
     const delay = Math.max(0, ((opts.at ?? 0) - ctx.currentTime) * 1000);
     setTimeout(() => pad.flash(notes, 600), delay);
     return tones.start(notes, { strum: isStrum(), ...opts });
   }
 
-  const hold = new HoldMode(
+  const hold = new HoldMode<Button>(
     ctx,
     player,
-    (c, at) => play(c, { at }),
-    (index) => buttons.forEach((b, i) => b.classList.toggle("latched", i === index)),
+    (b, at) => playNotes(notesOf(b), { at }),
+    (index) => buttons.forEach((el, i) => el.classList.toggle("latched", i === index)),
   );
   const holdEl = $<HTMLInputElement>("hold");
   holdEl.addEventListener("change", () => (hold.enabled = holdEl.checked));
 
   function press(index: number): HeldNotes | null {
-    const c = chords[index];
-    if (!c) return null;
+    const b = chords[index];
+    if (!b) return null;
     if (hold.enabled) {
-      hold.toggle(index, c);
+      hold.toggle(index, b);
       return null;
     }
-    return play(c);
+    return playNotes(notesOf(b));
+  }
+
+  function toButton(entry: ChordEntry): Button | null {
+    const parsed = parseChord(entry.symbol);
+    if (!parsed && !entry.voicing?.length) return null;
+    return { entry, parsed };
   }
 
   function render(): void {
     buttons.length = 0;
     $("chords").replaceChildren(
-      ...chords.map((c, i) => {
+      ...chords.map((b, i) => {
         const btn = document.createElement("button");
         btn.className = "chord";
-        btn.title = c.symbol;
+        btn.title = b.entry.voicing ? `${b.entry.symbol}: ${noteNames(b.entry.voicing)}` : b.entry.symbol;
+        btn.classList.toggle("custom", !!b.entry.voicing);
         const idx = document.createElement("span");
         idx.className = "idx";
         idx.textContent = i < 9 ? String(i + 1) : "";
@@ -80,7 +104,7 @@ export function setupChordPanel(
           render();
           workspaceChanged();
         });
-        btn.append(idx, c.symbol, del);
+        btn.append(idx, b.entry.symbol, del);
         btn.addEventListener("pointerdown", (e) => {
           if (e.target === del) return;
           const held = press(i);
@@ -93,32 +117,40 @@ export function setupChordPanel(
     );
   }
 
+  function add(entry: ChordEntry): void {
+    const b = toButton(entry);
+    if (!b) return;
+    chords.push(b);
+    render();
+    workspaceChanged();
+    if (!hold.enabled) playNotes(notesOf(b), { duration: 2 }); // preview
+  }
+
   $<HTMLFormElement>("chord-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const input = $<HTMLInputElement>("chord-input");
     const err = $("chord-error");
-    const parsed = parseChord(input.value);
-    if (!parsed) {
-      err.textContent = input.value.trim() ? `Unknown chord: ${input.value.trim()}` : "";
+    const symbol = input.value.trim();
+    if (!parseChord(symbol)) {
+      err.textContent = symbol ? `Unknown chord: ${symbol}` : "";
       return;
     }
     err.textContent = "";
-    chords.push(parsed);
     input.value = "";
-    render();
-    workspaceChanged();
-    if (!hold.enabled) play(parsed, { duration: 2 }); // preview
+    add({ symbol });
   });
 
   return {
     press,
-    symbols: () => chords.map((c) => c.symbol),
-    applySymbols(symbols) {
+    add,
+    preview: (notes) => void playNotes(notes, { duration: 2 }),
+    entries: () => chords.map((b) => ({ ...b.entry })),
+    applyEntries(entries) {
       hold.unlatch();
       chords.length = 0;
-      for (const s of symbols) {
-        const c = parseChord(s);
-        if (c) chords.push(c);
+      for (const e of entries) {
+        const b = toButton(e);
+        if (b) chords.push(b);
       }
       render();
     },

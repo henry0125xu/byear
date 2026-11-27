@@ -19,9 +19,30 @@ export interface Workspace {
   semitones: number;
   cents: number;
   /** Chord buttons, in order. */
-  chords: { symbol: string }[];
+  chords: ChordEntry[];
   /** Pitch class such as "A" or "Bb"; null until set (v0.2 step 2). */
   tonic: string | null;
+}
+
+/**
+ * A chord button. `symbol` is the name shown; it must parse as a chord unless
+ * `voicing` is given (builder chords), in which case it is only a label.
+ */
+export interface ChordEntry {
+  symbol: string;
+  /** Exact MIDI notes, low to high (chord builder). Without it the voicing follows the sound. */
+  voicing?: number[];
+}
+
+const MAX_LABEL = 40;
+const MAX_NOTES = 12;
+
+/** Valid voicing: whole MIDI notes on the 88 keys, sorted, no duplicates; null if none are valid. */
+function repairVoicing(v: unknown): number[] | null {
+  if (!Array.isArray(v)) return null;
+  const notes = [...new Set(v.filter((m): m is number => Number.isInteger(m) && m >= 21 && m <= 108))];
+  notes.sort((a, b) => a - b);
+  return notes.length ? notes.slice(0, MAX_NOTES) : null;
 }
 
 export const SPEED_RANGE = [0.25, 1.25] as const;
@@ -80,10 +101,14 @@ export function parseWorkspace(data: unknown): ParseResult {
   ws.semitones = Math.round(clamp(num(data.semitones, 0), SEMITONE_RANGE));
   ws.cents = Math.round(clamp(num(data.cents, 0), CENT_RANGE));
   if (Array.isArray(data.chords)) {
-    ws.chords = data.chords
-      .map((c) => (isObj(c) && typeof c.symbol === "string" ? c.symbol.trim() : ""))
-      .filter((symbol) => parseChord(symbol) !== null)
-      .map((symbol) => ({ symbol }));
+    ws.chords = [];
+    for (const c of data.chords) {
+      if (!isObj(c) || typeof c.symbol !== "string") continue;
+      const symbol = c.symbol.trim().slice(0, MAX_LABEL);
+      const voicing = repairVoicing(c.voicing);
+      if (voicing) ws.chords.push({ symbol: symbol || "Chord", voicing });
+      else if (parseChord(symbol)) ws.chords.push({ symbol });
+    }
   }
   ws.tonic = typeof data.tonic === "string" && /^[A-G][#b]?$/.test(data.tonic) ? data.tonic : null;
   return { ok: true, workspace: ws };

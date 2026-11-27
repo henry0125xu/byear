@@ -17,7 +17,7 @@ const sample = (): Workspace => ({
   speed: 0.6,
   semitones: -2,
   cents: 15,
-  chords: [{ symbol: "Am7" }, { symbol: "G/B" }, { symbol: "C6/9" }],
+  chords: [{ symbol: "Am7" }, { symbol: "G/B" }, { symbol: "C6/9" }, { symbol: "Cm7(9)/Eb", voicing: [51, 55, 58, 60, 74] }],
   tonic: "A",
 });
 
@@ -89,6 +89,33 @@ describe("repairs", () => {
   it("drops chords that don't parse, keeps order", () => {
     const ws = parsed({ ...sample(), chords: [{ symbol: "Am7" }, { symbol: "Hm" }, 3, { symbol: " Dsus4 " }] });
     expect(ws.chords).toEqual([{ symbol: "Am7" }, { symbol: "Dsus4" }]);
+  });
+
+  it("keeps builder chords: any label with a valid voicing", () => {
+    const ws = parsed({ ...sample(), chords: [{ symbol: "C4 C#4 D4", voicing: [60, 61, 62] }] });
+    expect(ws.chords).toEqual([{ symbol: "C4 C#4 D4", voicing: [60, 61, 62] }]);
+  });
+
+  it("repairs voicings: sorted, unique, on the 88 keys, whole numbers", () => {
+    const ws = parsed({ ...sample(), chords: [{ symbol: "x", voicing: [67, 60, 60, 64.5, 200, 5, "64", 64] }] });
+    expect(ws.chords).toEqual([{ symbol: "x", voicing: [60, 64, 67] }]);
+  });
+
+  it("drops an unusable voicing, keeping the chord only if its symbol parses", () => {
+    const ws = parsed({
+      ...sample(),
+      chords: [
+        { symbol: "Am7", voicing: [] },
+        { symbol: "weird", voicing: "C E G" },
+      ],
+    });
+    expect(ws.chords).toEqual([{ symbol: "Am7" }]);
+  });
+
+  it("gives a builder chord with no label a placeholder name", () => {
+    expect(parsed({ ...sample(), chords: [{ symbol: " ", voicing: [60] }] }).chords).toEqual([
+      { symbol: "Chord", voicing: [60] },
+    ]);
   });
 
   it("accepts only a pitch class as tonic", () => {

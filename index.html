@@ -105,8 +105,32 @@
         <label class="inline" title="Click a chord to latch it: it is struck again each time the loop returns to A. Click it again to release.">
           <input id="hold" type="checkbox" /> Hold
         </label>
+        <button id="builder-toggle" type="button" class="small" title="Build a chord from parts, or by picking notes">Builder</button>
         <span id="chord-error" class="error small"></span>
       </form>
+      <div id="builder" class="builder" hidden>
+        <div class="builder-row">
+          <span class="muted small row-head">Build</span>
+          <select id="b-root" title="Root"></select>
+          <select id="b-triad" title="Quality"></select>
+          <select id="b-seventh" title="6th / 7th"></select>
+          <span id="b-ext" class="ext" title="Tensions"></span>
+          <label class="small">Inv <select id="b-inv"></select></label>
+          <label class="small">Oct <select id="b-oct"></select></label>
+          <span id="b-label" class="mono b-label"></span>
+          <button id="b-listen" type="button" title="Listen">▶</button>
+          <button id="b-add" type="button">Add</button>
+        </div>
+        <div class="builder-row">
+          <span class="muted small row-head">Pick</span>
+          <label class="inline small"><input id="p-on" type="checkbox" /> Pick notes</label>
+          <span id="p-notes" class="mono small muted p-notes"></span>
+          <input id="p-name" type="text" size="12" placeholder="Name" autocomplete="off" title="Name (empty = suggested)" />
+          <button id="p-listen" type="button" title="Listen">▶</button>
+          <button id="p-add" type="button">Add</button>
+          <button id="p-clear" type="button">Clear</button>
+        </div>
+      </div>
       <div id="chords" class="chords"></div>
     </section>
 

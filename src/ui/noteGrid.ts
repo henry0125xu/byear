@@ -105,6 +105,11 @@ export class NoteGrid {
     this.shift(0);
   }
 
+  /** Marks the notes picked in the manual chord builder. */
+  setPicked(midis: ReadonlySet<number>): void {
+    for (const [midi, el] of this.cells) el.classList.toggle("picked", midis.has(midi));
+  }
+
   flash(midis: number[], ms = 400): void {
     for (const m of midis) {
       const el = this.cells.get(m);
