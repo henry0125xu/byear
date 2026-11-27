@@ -1,130 +1,93 @@
-import {
-  loadRubberBand,
-  RubberBandStretcher,
-  SoundTouchStretcher,
-  type EngineId,
-  type FrameSource,
-  type Stretcher,
-} from "./stretch";
-import type { RubberBandInterface } from "rubberband-wasm";
+import rubberBandWasmUrl from "rubberband-wasm/dist/rubberband.wasm?url";
+import workletUrl from "./player-worklet.ts?worker&url";
+import { PROCESSOR_NAME, type FromWorklet, type ToWorklet } from "./protocol";
+import type { EngineId } from "./stretch";
 
-const BLOCK = 4096;
-
-/**
- * Reads frames from an AudioBuffer, keeping its own read head and wrapping
- * inside the A/B loop. The stretcher pulls from this (SoundTouch's position
- * argument is ignored).
- *
- * It also remembers where each run of frames came from, so "n frames handed
- * out since the last seek" can be mapped back to a file position even across
- * loop wraps (see `positionAt`).
- */
-class LoopSource implements FrameSource {
-  pos = 0;
-  loopA = 0;
-  loopB = 0;
-  loopOn = false;
-  /** Frames handed out since the last seek. */
-  fed = 0;
-  /** Runs of contiguous frames: handed-out index `cum` came from file frame `src`. */
-  private runs: { cum: number; src: number }[] = [{ cum: 0, src: 0 }];
-  private left: Float32Array;
-  private right: Float32Array;
-
-  constructor(readonly buffer: AudioBuffer) {
-    this.left = buffer.getChannelData(0);
-    this.right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : this.left;
-  }
-
-  get loopActive(): boolean {
-    return this.loopOn && this.loopB - this.loopA > 64;
-  }
-
-  seek(frame: number): void {
-    this.pos = Math.max(0, Math.min(this.left.length, Math.round(frame)));
-    this.fed = 0;
-    this.runs = [{ cum: 0, src: this.pos }];
-  }
-
-  /** File frame of the `cum`-th frame handed out since the last seek. */
-  positionAt(cum: number): number {
-    cum = Math.max(0, cum);
-    for (let i = this.runs.length - 1; i >= 0; i--) {
-      const run = this.runs[i];
-      if (run.cum <= cum) return Math.min(this.left.length, run.src + (cum - run.cum));
-    }
-    return this.runs[0].src;
-  }
-
-  /** Advances the read head by one frame; returns the frame index, or -1 at the end. */
-  private next(): number {
-    if (this.loopActive && this.pos >= this.loopB) {
-      this.pos = this.loopA;
-      this.runs.push({ cum: this.fed, src: this.pos });
-      // Keep a few seconds of history; nothing buffered is older than that.
-      const keepFrom = this.fed - 10 * this.buffer.sampleRate;
-      while (this.runs.length > 1 && this.runs[1].cum < keepFrom) this.runs.shift();
-    }
-    if (this.pos >= this.left.length) return -1;
-    this.fed++;
-    return this.pos++;
-  }
-
-  extract(target: Float32Array, numFrames: number): number {
-    let i = 0;
-    for (; i < numFrames; i++) {
-      const p = this.next();
-      if (p < 0) break;
-      target[i * 2] = this.left[p];
-      target[i * 2 + 1] = this.right[p];
-    }
-    return i;
-  }
-
-  readPlanar(l: Float32Array, r: Float32Array, n: number): number {
-    let i = 0;
-    for (; i < n; i++) {
-      const p = this.next();
-      if (p < 0) break;
-      l[i] = this.left[p];
-      r[i] = this.right[p];
-    }
-    return i;
-  }
+let wasmBytes: Promise<ArrayBuffer> | null = null;
+function fetchRubberBand(): Promise<ArrayBuffer> {
+  wasmBytes ??= fetch(rubberBandWasmUrl).then((res) => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.arrayBuffer();
+  });
+  wasmBytes.catch(() => (wasmBytes = null)); // allow a retry
+  return wasmBytes;
 }
 
+/**
+ * Main-thread handle for the player worklet (see player-worklet.ts / engine.ts).
+ * Commands are posted; state the UI reads synchronously is mirrored here, and
+ * the playhead is extrapolated from the worklet's ~23 ms position reports.
+ */
 export class Player {
   readonly output: GainNode;
-  private source: LoopSource | null = null;
-  private stretcher: Stretcher | null = null;
-  private node: ScriptProcessorNode;
+  private node: AudioWorkletNode | null = null;
+  private queue: ToWorklet[] = [];
+  private _buffer: AudioBuffer | null = null;
+  private _loop = { a: 0, b: 0, on: false };
   private _engine: EngineId = "soundtouch";
-  private rb: RubberBandInterface | null = null;
+  private engineReplies = new Map<number, (error?: string) => void>();
+  private nextReq = 1;
+  private wasmSent = false;
   private _playing = false;
   private _speed = 1;
   private _semitones = 0;
   private _cents = 0;
+  private _preRoll = 0;
+  /** Last known position: `pos` was rendered at context time `time` (heard `latency` later); never report less than `floor`. */
+  private snap = { pos: 0, time: 0, floor: 0 };
   onEnded: () => void = () => {};
 
-  constructor(ctx: AudioContext) {
+  constructor(private ctx: AudioContext) {
     this.output = ctx.createGain();
-    this.node = ctx.createScriptProcessor(BLOCK, 2, 2);
-    this.node.onaudioprocess = (e) => this.process(e);
-    this.node.connect(this.output);
+    ctx.audioWorklet.addModule(workletUrl).then(() => {
+      this.node = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+        numberOfInputs: 0,
+        outputChannelCount: [2],
+      });
+      this.node.port.onmessage = (e: MessageEvent<FromWorklet>) => this.onMessage(e.data);
+      this.node.connect(this.output);
+      for (const msg of this.queue) this.node.port.postMessage(msg);
+      this.queue = [];
+    });
+  }
+
+  private post(msg: ToWorklet, transfer: Transferable[] = []): void {
+    if (this.node) this.node.port.postMessage(msg, transfer);
+    else this.queue.push(msg); // before the module loads; nothing is transferred yet
+  }
+
+  private onMessage(msg: FromWorklet): void {
+    switch (msg.type) {
+      case "pos":
+        this.snap = { pos: msg.pos, time: msg.time, floor: 0 };
+        break;
+      case "ended":
+        this._playing = false;
+        this.onEnded();
+        break;
+      case "engine":
+        this.engineReplies.get(msg.req)?.(msg.error);
+        this.engineReplies.delete(msg.req);
+        break;
+    }
   }
 
   load(buffer: AudioBuffer): void {
+    this._buffer = buffer;
     this._playing = false;
-    this.source = new LoopSource(buffer);
-    this.source.loopB = buffer.length;
-    this.replaceStretcher();
+    this._loop = { a: 0, b: buffer.duration, on: false };
+    const left = buffer.getChannelData(0).slice();
+    const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1).slice() : left;
+    const transfer = right === left ? [left.buffer] : [left.buffer, right.buffer];
+    this.post({ type: "load", left, right, sampleRate: buffer.sampleRate }, transfer);
+    this.setSnap(0);
   }
 
   get buffer(): AudioBuffer | null {
-    return this.source?.buffer ?? null;
+    return this._buffer;
   }
   get duration(): number {
-    return this.buffer?.duration ?? 0;
+    return this._buffer?.duration ?? 0;
   }
   get playing(): boolean {
     return this._playing;
@@ -134,92 +97,96 @@ export class Player {
   get engine(): EngineId {
     return this._engine;
   }
-  /** Switches the time-stretch engine, keeping the audible position. Rejects if Rubber Band fails to load. */
+  /** Switches the time-stretch engine. Rejects if Rubber Band fails to load. */
   async setEngine(id: EngineId): Promise<void> {
-    if (id !== "soundtouch") this.rb = await loadRubberBand();
-    if (id === this._engine) return;
-    const heard = this.currentTime;
+    let wasm: ArrayBuffer | undefined;
+    if (id !== "soundtouch" && !this.wasmSent) wasm = await fetchRubberBand();
+    const req = this.nextReq++;
+    const error = await new Promise<string | undefined>((resolve) => {
+      this.engineReplies.set(req, resolve);
+      // A copy, so the cached bytes survive a failed init and can be resent.
+      this.post({ type: "engine", req, id, wasm: wasm?.slice(0) });
+    });
+    if (error) throw new Error(error);
+    if (wasm) this.wasmSent = true;
     this._engine = id;
-    if (!this.source) return;
-    this.replaceStretcher();
-    this.seek(heard);
-  }
-
-  private replaceStretcher(): void {
-    const s = this.source;
-    if (!s) return;
-    this.stretcher?.dispose();
-    this.stretcher =
-      this._engine !== "soundtouch" && this.rb
-        ? new RubberBandStretcher(this.rb, s, s.buffer.sampleRate, this._engine === "rubberband-hq")
-        : new SoundTouchStretcher(s);
-    this.applyStretch();
   }
 
   // ---- transport ----
   play(): void {
-    if (!this.source) return;
-    if (this.source.pos >= this.source.buffer.length && !this.source.loopActive) this.seek(0);
-    if (this.source.loopActive && this.currentTime >= this.loop.b) this.seek(this.loop.a);
+    if (!this._buffer) return;
+    this.post({ type: "play" });
     this._playing = true;
+    // Resume extrapolating from the paused position, starting with the next render.
+    this.snap = { pos: this.snap.pos, time: this.ctx.currentTime, floor: this.snap.pos };
   }
   pause(): void {
+    this.post({ type: "pause" });
     this._playing = false;
   }
   stop(): void {
+    this.post({ type: "stop" });
     this._playing = false;
-    this.seek(this.source?.loopActive ? this.loop.a : 0);
+    this.setSnap(this._loop.on ? this.loopStart : 0);
   }
-
   seek(seconds: number): void {
-    if (!this.source || !this.stretcher) return;
-    this.source.seek(seconds * this.source.buffer.sampleRate);
-    this.stretcher.clear();
+    const t = Math.max(0, Math.min(this.duration, seconds));
+    this.post({ type: "seek", time: t });
+    this.setSnap(t);
+  }
+  /** Jump to A (or the file start without a loop), with pre-roll. */
+  seekToLoopStart(): void {
+    if (!this._loop.on) return this.seek(0);
+    this.post({ type: "seekToLoopStart" });
+    this.setSnap(this.loopStart);
+  }
+  private get loopStart(): number {
+    return Math.max(0, this._loop.a - this._preRoll);
   }
 
-  /** Audible position: frames handed to the stretcher, minus what it still holds and the output block. */
+  /** Optimistic position until the worklet reports back: rendered from now, heard after the latency. */
+  private setSnap(pos: number): void {
+    this.snap = { pos, time: this.ctx.currentTime, floor: pos };
+  }
+
+  private get latency(): number {
+    return this.ctx.outputLatency || this.ctx.baseLatency || 0;
+  }
+
+  /** Audible position: last report, plus time since it reached the speakers. */
   get currentTime(): number {
-    const s = this.source;
-    if (!s || !this.stretcher) return 0;
-    const lag = this.stretcher.pending + (this._playing ? BLOCK * this._speed : 0);
-    return s.positionAt(s.fed - lag) / s.buffer.sampleRate;
+    if (!this._buffer) return 0;
+    let t = this.snap.pos;
+    if (this._playing) t += (this.ctx.currentTime - this.latency - this.snap.time) * this._speed;
+    t = Math.max(t, this.snap.floor);
+    const { a, b, on } = this._loop;
+    if (on && b - a > 0.01 && this.snap.pos < b && t >= b) t = a + ((t - b) % (b - a));
+    return Math.max(0, Math.min(this.duration, t));
   }
 
   // ---- loop ----
   get loop(): { a: number; b: number; on: boolean } {
-    const s = this.source;
-    if (!s) return { a: 0, b: 0, on: false };
-    const sr = s.buffer.sampleRate;
-    return { a: s.loopA / sr, b: s.loopB / sr, on: s.loopOn };
+    return { ...this._loop };
   }
   setLoop(a: number, b: number): void {
-    const s = this.source;
-    if (!s) return;
-    const heard = this.currentTime; // read before the loop changes
-    const sr = s.buffer.sampleRate;
+    if (!this._buffer) return;
     const [lo, hi] = a <= b ? [a, b] : [b, a];
-    s.loopA = Math.max(0, Math.round(lo * sr));
-    s.loopB = Math.min(s.buffer.length, Math.round(hi * sr));
-    this.resyncToLoop(heard);
+    this._loop.a = Math.max(0, lo);
+    this._loop.b = Math.min(this.duration, hi);
+    this.post({ type: "loop", a: this._loop.a, b: this._loop.b });
   }
   setLoopOn(on: boolean): void {
-    if (!this.source) return;
-    const heard = this.currentTime;
-    this.source.loopOn = on;
-    this.resyncToLoop(heard);
+    if (!this._buffer) return;
+    this._loop.on = on;
+    this.post({ type: "loopOn", on });
   }
 
-  /**
-   * The read head runs ahead of what is audible (stretcher buffering). If a new
-   * loop end lands between the two, the buffered audio past B would still play
-   * once. Drop the buffer so the very first pass already respects the loop.
-   */
-  private resyncToLoop(heard: number): void {
-    const s = this.source;
-    if (!s || !s.loopActive) return;
-    const { a, b } = this.loop;
-    if (heard >= b) this.seek(a);
-    else if (heard >= a && s.pos > s.loopB) this.seek(heard);
+  get preRoll(): number {
+    return this._preRoll;
+  }
+  set preRoll(seconds: number) {
+    this._preRoll = Math.max(0, seconds);
+    this.post({ type: "preRoll", seconds: this._preRoll });
   }
 
   // ---- stretch ----
@@ -227,46 +194,30 @@ export class Player {
     return this._speed;
   }
   set speed(v: number) {
+    // Re-anchor the extrapolation so the playhead doesn't jump.
+    this.snap = { pos: this.currentTime, time: this.ctx.currentTime - this.latency, floor: 0 };
     this._speed = v;
-    this.applyStretch();
+    this.postRate();
   }
   get semitones(): number {
     return this._semitones;
   }
   set semitones(v: number) {
     this._semitones = v;
-    this.applyStretch();
+    this.postRate();
   }
   get cents(): number {
     return this._cents;
   }
   set cents(v: number) {
     this._cents = v;
-    this.applyStretch();
+    this.postRate();
   }
   /** Total pitch offset of the recording in cents (used to keep test tones in tune). */
   get pitchOffsetCents(): number {
     return this._semitones * 100 + this._cents;
   }
-
-  private applyStretch(): void {
-    this.stretcher?.setRate(this._speed, Math.pow(2, this.pitchOffsetCents / 1200));
-  }
-
-  private process(e: AudioProcessingEvent): void {
-    const l = e.outputBuffer.getChannelData(0);
-    const r = e.outputBuffer.getChannelData(1);
-    if (!this._playing || !this.stretcher) {
-      l.fill(0);
-      r.fill(0);
-      return;
-    }
-    const n = this.stretcher.extract(l, r, BLOCK);
-    l.fill(0, n);
-    r.fill(0, n);
-    if (n === 0) {
-      this._playing = false;
-      queueMicrotask(() => this.onEnded());
-    }
+  private postRate(): void {
+    this.post({ type: "rate", speed: this._speed, pitchScale: Math.pow(2, this.pitchOffsetCents / 1200) });
   }
 }

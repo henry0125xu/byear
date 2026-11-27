@@ -30,6 +30,15 @@ export function isGuitar(id: InstrumentId): boolean {
 }
 
 const STRUM_GAP = 0.025; // seconds between strings
+/** Shortest sound for a quick click, counted from the last strummed string. */
+const MIN_HOLD = 0.12;
+/** With sustain, released notes ring on naturally but are cut after this long. */
+const SUSTAIN_MAX = 6;
+
+/** Notes started by `start`; `release` is the key/mouse coming up. */
+export interface HeldNotes {
+  release(): void;
+}
 
 type Instrument = ReturnType<typeof Soundfont> | ReturnType<typeof ElectricPiano>;
 
@@ -42,6 +51,8 @@ export class Tones {
   private instruments = new Map<InstrumentId, Promise<Instrument>>();
   current: InstrumentId = "piano";
   detuneCents = 0;
+  /** Like a sustain pedal: released notes ring on instead of stopping. */
+  sustain = false;
 
   constructor(private ctx: AudioContext) {
     this.volume = ctx.createGain();
@@ -71,20 +82,47 @@ export class Tones {
     return p;
   }
 
-  async play(midi: number[], opts: { strum?: boolean; duration?: number } = {}): Promise<void> {
-    const inst = await this.load(this.current);
-    const now = this.ctx.currentTime;
+  /**
+   * Starts notes that sound until `release()` (press-and-hold), or for a fixed
+   * `duration` if given. Samples may still be loading; release still works.
+   */
+  start(midi: number[], opts: { strum?: boolean; duration?: number } = {}): HeldNotes {
     const sorted = [...midi].sort((a, b) => a - b);
-    const duration = opts.duration ?? 2;
-    sorted.forEach((note, i) => {
-      inst.start({
-        note,
-        time: now + (opts.strum ? i * STRUM_GAP : 0),
-        duration,
-        detune: this.detuneCents,
-        velocity: 110,
+    const stops: ((time?: number) => void)[] = [];
+    let startedAt = -1;
+    let releaseAt = -1;
+
+    const stopAll = () => {
+      const t = this.ctx.currentTime;
+      const span = opts.strum ? (sorted.length - 1) * STRUM_GAP : 0;
+      const at = Math.max(t, releaseAt, startedAt + span + MIN_HOLD);
+      const when = this.sustain ? at + SUSTAIN_MAX : at;
+      for (const stop of stops) stop(when);
+    };
+
+    void this.load(this.current).then((inst) => {
+      startedAt = this.ctx.currentTime;
+      sorted.forEach((note, i) => {
+        stops.push(
+          inst.start({
+            note,
+            time: startedAt + (opts.strum ? i * STRUM_GAP : 0),
+            duration: opts.duration ?? null,
+            detune: this.detuneCents,
+            velocity: 110,
+          }),
+        );
       });
+      if (releaseAt >= 0) stopAll(); // released while loading
     });
+
+    return {
+      release: () => {
+        if (opts.duration !== undefined || releaseAt >= 0) return;
+        releaseAt = this.ctx.currentTime;
+        if (startedAt >= 0) stopAll();
+      },
+    };
   }
 
   stopAll(): void {

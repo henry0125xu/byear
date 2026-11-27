@@ -42,7 +42,10 @@ npm run build      # tsc + vite build → dist/
 | File | Role |
 |------|------|
 | [src/main.ts](src/main.ts) | Wires everything: file loading, transport, sliders, chord buttons, shortcuts, render loop |
-| [src/audio/player.ts](src/audio/player.ts) | `Player`: `LoopSource` (own read head, wraps at A/B) → `Stretcher` → ScriptProcessor → `output` gain |
+| [src/audio/player.ts](src/audio/player.ts) | `Player` (main thread): posts commands to the worklet, mirrors loop/speed/playing, extrapolates `currentTime` from the worklet's position reports. Fetches the Rubber Band .wasm and sends the bytes over |
+| [src/audio/player-worklet.ts](src/audio/player-worklet.ts) | AudioWorklet processor: runs `PlaybackEngine`, renders 128-frame quanta, reports `{pos, time}` every ~23 ms |
+| [src/audio/engine.ts](src/audio/engine.ts) | `PlaybackEngine` and `LoopSource` (own read head, wraps at A/B): transport, loop, pre-roll, stretcher. No DOM/worklet APIs, so Node can drive it |
+| [src/audio/protocol.ts](src/audio/protocol.ts) | Message types between `Player` and the worklet |
 | [src/audio/stretch.ts](src/audio/stretch.ts) | `Stretcher` interface; `RubberBandStretcher` (R2 / R3 HQ) and `SoundTouchStretcher`. Engine choice in localStorage `byear.engine` |
 | [src/audio/tones.ts](src/audio/tones.ts) | `Tones`: smplr instruments (`INSTRUMENTS`: piano, electric pianos via `ElectricPiano`, several guitar sounds) → `volume` gain (0–2) → limiter (`output`). Choice in localStorage `byear.instrument` |
 | [src/music/chords.ts](src/music/chords.ts) | `parseChord`, `pianoVoicing`, `guitarVoicing` |
@@ -52,13 +55,16 @@ npm run build      # tsc + vite build → dist/
 
 ## Things that are easy to get wrong
 
-- **The read head runs ahead of the audio you hear.** The stretcher buffers source audio. `Player.currentTime` takes the frames handed out since the last seek (`LoopSource.fed`), subtracts `Stretcher.pending` and the output block, and maps the result back through `LoopSource.positionAt` (which records each loop wrap). Any logic about "where the user is" must use `currentTime`, not `LoopSource.pos`.
+- **The read head runs ahead of the audio you hear.** The stretcher buffers source audio. `PlaybackEngine.heardTime` takes the frames handed out since the last seek (`LoopSource.fed`), subtracts `Stretcher.pending`, and maps the result back through `LoopSource.positionAt` (which records each loop wrap). The worklet reports that with the context time; `Player.currentTime` adds the elapsed time × speed minus `outputLatency`. Any logic about "where the user is" must use these, not `LoopSource.pos`.
+- **Two copies of some state.** `Player` mirrors loop, speed, pre-roll and playing so the UI can read them synchronously; the worklet's `PlaybackEngine` is the source of truth for audio. Change both sides together. After a seek, `Player.setSnap` shows the target until the worklet reports.
 - **Rubber Band alignment.** After every reset, `RubberBandStretcher.clear` feeds the preferred start pad of silence and discards the start delay, so output lines up with the seek point. `pending` is only right if that is kept.
-- **CPU.** Rubber Band runs on the main thread inside the ScriptProcessor callback (block = 4096 frames ≈ 93 ms). In Node, R3 HQ used about 25% of a core with a worst block of about 50–70 ms at 50% speed; R2 about 10%. If the user hears crackles, suggest the lighter engine, and treat it as a reason to move to an AudioWorklet.
-- **Loop changes resync the buffer.** `setLoop` and `setLoopOn` read `currentTime` *before* they change the loop (the estimate depends on the loop), then call `resyncToLoop`. Without that, the first pass plays past B. Keep this when touching loop code.
+- **CPU and the 2.9 ms quantum.** Rubber Band runs in the AudioWorklet, which must finish each 128-frame quantum in about 2.9 ms. Feeding it only what `samples_required` asks for, at most `FEED_CHUNK` (256) frames at a time, keeps the work even; feeding a 512-frame minimum caused 60–120 late quanta per 6 s with R3 at 50% (Node simulation), now 1–2. If the user hears crackles, suggest the lighter engine first.
+- **Loop changes resync the buffer.** `PlaybackEngine.setLoop` and `setLoopOn` read `heardTime` *before* they change the loop (the estimate depends on the loop), then call `resyncToLoop`. Without that, the first pass plays past B. Keep this when touching loop code.
 - **Test tones follow the recording's pitch offset.** `tones.detuneCents = player.pitchOffsetCents` (transpose and cents). Chord and note labels always stay in the original key (Decision #2).
 - **Slash chords are split by hand** in `parseChord`, because tonal measures `G/B` intervals from the bass. `C6/9` is a chord type, not a slash chord.
 - **Buttons are blurred after a click** so that Space doesn't trigger them again. Shortcuts are ignored while a text input or select has focus.
+- **Notes sound while held.** `Tones.start` returns `HeldNotes`; mouse-up (`releaseOnPointerUp`) or key-up (`1`–`9`) calls `release()`. Quick clicks still last `MIN_HOLD`; with Sustain on, released notes ring for up to `SUSTAIN_MAX`. Only the chord preview after "Add" uses a fixed duration.
+- **Pre-roll only applies to jumps to A** (Enter, Stop, play past B, nudging A, `seekToLoopStart`), never to loop wraps, so the loop itself doesn't change.
 - **Volume in practice.** The user found the tones too quiet at gain 1.0. The range is now 0–200% (default 120%) with velocity 110 and a limiter.
 
 ## Status (as of 2026-11-27)
@@ -67,16 +73,17 @@ The first commit is a playable prototype that covers most of v0.1.
 
 Done:
 - Import (picker and drag-and-drop), waveform, play / pause / stop / seek
-- A/B loop: `[` `]` `L` `Enter`, drag to create, drag edges; first-pass resync fix
+- A/B loop: `[` `]` `L` `Enter`, drag to create, drag edges; first-pass resync fix; Shift+←/→ moves A, Ctrl+←/→ moves B (50 ms); pre-roll 0 / 0.5 / 1 / 2 s (localStorage `byear.preRoll`)
+- Playback in an AudioWorklet (ScriptProcessor removed); Rubber Band HQ / lighter / SoundTouch engines
+- Notes and chords sound while held, Sustain toggle
 - Speed slider 25–125% with 100/75/50 presets; transpose ±12; fine-tune ±50¢
 - Piano and guitar tones, strum toggle (on by default for guitar), separate volumes
 - Chord buttons from symbols, keys `1`–`9`, guitar-style voicing
 - Note grid (default) and piano view toggle (the user didn't want an obvious piano on a work screen)
 
+User feedback (2026-11-27): SoundTouch at 50% sounded worse than YouTube → Rubber Band (Decision #6) "sounds much better". Loop seam and playhead were fine before the AudioWorklet move; recheck by ear after it.
+
 Remaining for v0.1:
-- Nudge loop edges with shortcuts; optional pre-roll before A
-- User judged (2026-11-27): SoundTouch at 50% sounded worse than YouTube → switched to Rubber Band (Decision #6), user still to confirm by ear. Guitar samples "OK" → more guitar sounds added to try. Loop seam and playhead: fine.
-- Tech debt: ScriptProcessorNode is deprecated → move to AudioWorklet once the prototype is accepted
 - GitHub Pages deploy (needs a remote repo from the user)
 
 Next after that: v0.2 (computer keyboard mode, chord builder, hold mode, tonic and drone, workspace save). See the roadmap in the proposal.

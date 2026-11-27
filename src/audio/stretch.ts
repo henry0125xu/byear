@@ -1,5 +1,4 @@
 import { RubberBandInterface, RubberBandOption } from "rubberband-wasm";
-import rubberBandWasmUrl from "rubberband-wasm/dist/rubberband.wasm?url";
 import { SimpleFilter, SoundTouch, type SampleSource } from "soundtouchjs";
 
 export type EngineId = "rubberband" | "rubberband-hq" | "soundtouch";
@@ -60,19 +59,14 @@ export class SoundTouchStretcher implements Stretcher {
 
 // ---------------------------------------------------------------- Rubber Band
 
-let rubberBand: Promise<RubberBandInterface> | null = null;
-
-/** Loads and compiles the Rubber Band WASM module once. */
-export function loadRubberBand(): Promise<RubberBandInterface> {
-  rubberBand ??= fetch(rubberBandWasmUrl)
-    .then((res) => res.arrayBuffer())
-    .then((bytes) => WebAssembly.compile(bytes))
-    .then((mod) => RubberBandInterface.initialize(mod));
-  rubberBand.catch(() => (rubberBand = null)); // allow a retry
-  return rubberBand;
+/** Compiles and instantiates Rubber Band from the .wasm bytes (works inside an AudioWorklet). */
+export async function initRubberBand(bytes: ArrayBuffer): Promise<RubberBandInterface> {
+  return RubberBandInterface.initialize(await WebAssembly.compile(bytes));
 }
 
 const MAX_CHUNK = 8192;
+/** Feed only what Rubber Band asks for, in small pieces, so the work spreads evenly over 128-frame render quanta. */
+const FEED_CHUNK = 256;
 
 /**
  * Rubber Band in real-time mode. `hq` selects the R3 ("finer") engine: clearly
@@ -162,7 +156,7 @@ export class RubberBandStretcher implements Stretcher {
         continue;
       }
       if (this.ended) break;
-      const need = Math.min(MAX_CHUNK, Math.max(512, rb.rubberband_get_samples_required(this.state)));
+      const need = Math.min(FEED_CHUNK, Math.max(64, rb.rubberband_get_samples_required(this.state)));
       const got = this.source.readPlanar(this.inL, this.inR, need);
       rb.memWrite(this.ptrL, this.inL.subarray(0, got));
       rb.memWrite(this.ptrR, this.inR.subarray(0, got));

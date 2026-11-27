@@ -1,7 +1,7 @@
 import "./style.css";
 import { Player } from "./audio/player";
 import type { EngineId } from "./audio/stretch";
-import { INSTRUMENTS, isGuitar, isInstrumentId, Tones, type InstrumentId } from "./audio/tones";
+import { INSTRUMENTS, isGuitar, isInstrumentId, Tones, type HeldNotes, type InstrumentId } from "./audio/tones";
 import { guitarVoicing, parseChord, pianoVoicing, type ParsedChord } from "./music/chords";
 import { NoteGrid } from "./ui/noteGrid";
 import { Piano } from "./ui/piano";
@@ -86,7 +86,7 @@ function refreshPlayButton(): void {
 function refreshLoopButton(): void {
   const { a, b, on } = player.loop;
   $("loop").classList.toggle("on", on);
-  $("loop-info").textContent = on ? `${fmt(a)} → ${fmt(b)}` : "";
+  $("loop-info").textContent = on ? `${fmt(a, 2)} → ${fmt(b, 2)}` : "";
 }
 player.onEnded = refreshPlayButton;
 
@@ -104,6 +104,30 @@ function setB(): void {
   player.setLoopOn(true);
   refreshLoopButton();
 }
+const NUDGE = 0.05; // seconds per Shift/Ctrl + arrow
+/** Moves one loop edge. Moving A replays from A; moving B replays its last second. */
+function nudgeLoop(edge: "a" | "b", delta: number): void {
+  const { a, b, on } = player.loop;
+  if (!on) return;
+  const na = edge === "a" ? Math.min(Math.max(0, a + delta), b - NUDGE) : a;
+  const nb = edge === "b" ? Math.max(Math.min(player.duration, b + delta), a + NUDGE) : b;
+  player.setLoop(na, nb);
+  refreshLoopButton();
+  if (!player.playing) return;
+  if (edge === "a") player.seekToLoopStart();
+  else player.seek(Math.max(na, nb - 1));
+}
+
+const PREROLL_KEY = "byear.preRoll";
+const prerollEl = $<HTMLSelectElement>("preroll");
+prerollEl.value = localStorage.getItem(PREROLL_KEY) ?? "0";
+if (!prerollEl.value) prerollEl.value = "0";
+player.preRoll = Number(prerollEl.value);
+prerollEl.addEventListener("change", () => {
+  player.preRoll = Number(prerollEl.value);
+  localStorage.setItem(PREROLL_KEY, prerollEl.value);
+});
+
 function toggleLoop(): void {
   player.setLoopOn(!player.loop.on);
   refreshLoopButton();
@@ -118,10 +142,10 @@ $("set-a").addEventListener("click", setA);
 $("set-b").addEventListener("click", setB);
 $("loop").addEventListener("click", toggleLoop);
 
-function fmt(t: number): string {
+function fmt(t: number, digits = 1): string {
   const m = Math.floor(t / 60);
-  const s = t - m * 60;
-  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
+  const s = (t - m * 60).toFixed(digits);
+  return `${m}:${s.padStart(digits + 3, "0")}`;
 }
 
 function frame(): void {
@@ -214,9 +238,24 @@ instrumentEl.addEventListener("change", () => {
   if (unlocked) loadInstrument(tones.current);
 });
 
+$<HTMLInputElement>("sustain").addEventListener("change", (e) => {
+  tones.sustain = (e.target as HTMLInputElement).checked;
+});
+
+/** Notes and chords sound while the mouse button is held (see Tones.sustain). */
+function releaseOnPointerUp(held: HeldNotes): void {
+  const up = () => {
+    held.release();
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
+  };
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
+}
+
 // ---------- note pad: plain grid (default) or piano ----------
 function playNote(midi: number): void {
-  void tones.play([midi], { duration: 1.5 });
+  releaseOnPointerUp(tones.start([midi]));
   flashNotes([midi]);
 }
 const noteGrid = new NoteGrid($("note-grid"), playNote);
@@ -245,10 +284,11 @@ const chords: ParsedChord[] = [];
 function voicing(c: ParsedChord): number[] {
   return isGuitar(tones.current) ? guitarVoicing(c) : pianoVoicing(c);
 }
-function playChord(c: ParsedChord): void {
+/** Starts a chord; it sounds until `release()` unless `duration` is given. */
+function playChord(c: ParsedChord, duration?: number): HeldNotes {
   const notes = voicing(c);
-  void tones.play(notes, { strum: strumEl.checked, duration: 2.5 });
   flashNotes(notes, 600);
+  return tones.start(notes, { strum: strumEl.checked, duration });
 }
 
 function renderChords(): void {
@@ -273,7 +313,7 @@ function renderChords(): void {
       btn.append(idx, c.symbol, del);
       btn.addEventListener("pointerdown", (e) => {
         if (e.target === del) return;
-        playChord(c);
+        releaseOnPointerUp(playChord(c));
       });
       return btn;
     }),
@@ -293,7 +333,7 @@ $<HTMLFormElement>("chord-form").addEventListener("submit", (e) => {
   chords.push(parsed);
   input.value = "";
   renderChords();
-  playChord(parsed);
+  playChord(parsed, 2); // preview
 });
 
 // ---------- keyboard shortcuts ----------
@@ -305,6 +345,11 @@ window.addEventListener("keydown", (e) => {
   if (tag === "SELECT") return;
   if (tag === "INPUT" && (e.target as HTMLInputElement).type !== "range") {
     if (e.key === "Escape") (e.target as HTMLElement).blur();
+    return;
+  }
+  if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && (e.shiftKey || e.ctrlKey) && !e.altKey) {
+    e.preventDefault();
+    nudgeLoop(e.shiftKey ? "a" : "b", e.key === "ArrowLeft" ? -NUDGE : NUDGE);
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -329,7 +374,7 @@ window.addEventListener("keydown", (e) => {
       toggleLoop();
       break;
     case "Enter":
-      player.seek(player.loop.on ? player.loop.a : 0);
+      player.seekToLoopStart();
       break;
     case "ArrowLeft":
       e.preventDefault();
@@ -340,9 +385,20 @@ window.addEventListener("keydown", (e) => {
       player.seek(player.currentTime + 2);
       break;
     default:
-      if (/^[1-9]$/.test(e.key)) {
+      if (/^[1-9]$/.test(e.key) && !e.repeat && !heldKeys.has(e.key)) {
         const c = chords[Number(e.key) - 1];
-        if (c) playChord(c);
+        if (c) heldKeys.set(e.key, playChord(c));
       }
   }
+});
+
+// Chord keys sound while held.
+const heldKeys = new Map<string, HeldNotes>();
+window.addEventListener("keyup", (e) => {
+  heldKeys.get(e.key)?.release();
+  heldKeys.delete(e.key);
+});
+window.addEventListener("blur", () => {
+  for (const held of heldKeys.values()) held.release();
+  heldKeys.clear();
 });
