@@ -50,7 +50,14 @@ Only pure logic is tested; sound quality and UI are judged by the user.
 
 | File | Role |
 |------|------|
-| [src/main.ts](src/main.ts) | Wires everything: file loading, transport, sliders, chord buttons, shortcuts, render loop |
+| [src/main.ts](src/main.ts) | Creates `AudioContext`, `Player`, `Tones`; audio unlock; calls the `setup*()` UI modules and wires them together |
+| [src/ui/transport.ts](src/ui/transport.ts) | `setupTransport`: waveform, play/stop, A/B loop, nudge, pre-roll (localStorage `byear.preRoll`), playhead render loop |
+| [src/ui/controls.ts](src/ui/controls.ts) | `setupControls`: speed, transpose, fine-tune, engine, volumes, sound, strum, sustain |
+| [src/ui/notePad.ts](src/ui/notePad.ts) | `setupNotePad`: note grid / piano view toggle, note playing, `flash` |
+| [src/ui/chordPanel.ts](src/ui/chordPanel.ts) | `setupChordPanel`: chord entry form, chord buttons, voicing choice |
+| [src/ui/shortcuts.ts](src/ui/shortcuts.ts) | `setupShortcuts`: all global keys (keydown/keyup), held chord keys `1`–`9` |
+| [src/ui/fileInput.ts](src/ui/fileInput.ts) | `setupFileInput`: picker and drag-and-drop, decode |
+| [src/ui/dom.ts](src/ui/dom.ts) | `$`, `fmt`, `releaseOnPointerUp` |
 | [src/audio/player.ts](src/audio/player.ts) | `Player` (main thread): posts commands to the worklet, mirrors loop/speed/playing, extrapolates `currentTime` from the worklet's position reports. Fetches the Rubber Band .wasm and sends the bytes over |
 | [src/audio/player-worklet.ts](src/audio/player-worklet.ts) | AudioWorklet processor: runs `PlaybackEngine`, renders 128-frame quanta, reports `{pos, time}` every ~23 ms |
 | [src/audio/engine.ts](src/audio/engine.ts) | `PlaybackEngine` and `LoopSource` (own read head, wraps at A/B): transport, loop, pre-roll, stretcher. No DOM/worklet APIs, so Node can drive it |
@@ -96,4 +103,4 @@ User feedback (2026-11-27): SoundTouch at 50% sounded worse than YouTube → Rub
 
 v0.1 is complete once the first Pages deploy is confirmed.
 
-Next after that: v0.2 (computer keyboard mode, chord builder, hold mode, tonic and drone, workspace save). See the roadmap in the proposal.
+Next: v0.2, planned 2026-11-27 (Decisions #12–15). Order: ~~split main.ts into modules~~ (done) → workspace save → tonic + drone → computer keyboard mode → hold mode → chord builder (structured, then manual). The user tries each step before it is committed.

@@ -316,6 +316,10 @@ All of the questions below were decided on 2026-11-27. Items marked ★ affect v
 | 9 | **Chord buttons**: one set per song, or a global library? | Per song, with "copy from another song" later |
 | 10 | **Chord annotation length**: does a chord need an end time? | No. It lasts until the next chord annotation. |
 | 11 | **Workspace matching**: renaming the file loses its saved workspace | Acceptable. Importing the JSON restores it. |
+| 12 | **Computer keyboard layout** (decided 2026-11-27, for v0.2) | DAW style, one octave: `A S D F G H J K L ;` are white keys from C, `W E T Y U O P` are black keys, `Z` / `X` shift the octave. |
+| 13 | **Hold mode** (v0.2): samples decay, so how does a chord "ring while the loop plays"? | Click a chord to latch it. It is struck again every time the loop returns to A, in time with the recording. Click it again (or another chord) to change or release. Uses the current sound. |
+| 14 | **Configurable key mapping** | Not in v0.2. The mapping lives in one data table so it can be opened up later. |
+| 15 | **Chord builder scope** (v0.2) | Both: structured first (root, quality, extensions, inversion, octave), then manual (pick notes). Chord buttons store a symbol plus an optional custom voicing. |
 
 ---
 
