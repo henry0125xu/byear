@@ -47,6 +47,7 @@ body {
 body.dragover { outline: 3px dashed var(--accent); outline-offset: -8px; }
 
 .top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.top .spacer { flex: 1; }
 h1 { font-size: 20px; margin: 0; letter-spacing: 0.5px; }
 
 .panel {

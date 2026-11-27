@@ -8,6 +8,7 @@ import { setupFileInput } from "./ui/fileInput";
 import { setupNotePad } from "./ui/notePad";
 import { setupShortcuts } from "./ui/shortcuts";
 import { setupTransport } from "./ui/transport";
+import { setupWorkspace } from "./ui/workspacePanel";
 
 const ctx = new AudioContext();
 const player = new Player(ctx);
@@ -30,8 +31,10 @@ const transport = setupTransport(player);
 const controls = setupControls(ctx, player, tones, () => unlocked);
 const pad = setupNotePad(tones);
 const chords = setupChordPanel(tones, pad, () => controls.strum);
+const workspace = setupWorkspace(transport, controls, chords);
 setupShortcuts(transport, chords);
-setupFileInput(ctx, (buffer) => {
+setupFileInput(ctx, (buffer, file) => {
   player.load(buffer);
   transport.setBuffer(buffer);
+  workspace.open(file.name, buffer.duration, () => player.loop);
 });

@@ -1,5 +1,6 @@
 import { isGuitar, type HeldNotes, type Tones } from "../audio/tones";
 import { guitarVoicing, parseChord, pianoVoicing, type ParsedChord } from "../music/chords";
+import { workspaceChanged } from "./changes";
 import { $, releaseOnPointerUp } from "./dom";
 import type { NotePad } from "./notePad";
 
@@ -8,6 +9,9 @@ export interface ChordPanel {
   chordAt(index: number): ParsedChord | undefined;
   /** Starts a chord; it sounds until `release()` unless `duration` is given. */
   play(chord: ParsedChord, duration?: number): HeldNotes;
+  symbols(): string[];
+  /** Replaces all chord buttons without notifying (restoring a workspace). Unknown symbols are skipped. */
+  applySymbols(symbols: string[]): void;
 }
 
 /** Chord entry form and the row of chord buttons. */
@@ -40,6 +44,7 @@ export function setupChordPanel(tones: Tones, pad: NotePad, isStrum: () => boole
           e.stopPropagation();
           chords.splice(i, 1);
           render();
+          workspaceChanged();
         });
         btn.append(idx, c.symbol, del);
         btn.addEventListener("pointerdown", (e) => {
@@ -64,11 +69,21 @@ export function setupChordPanel(tones: Tones, pad: NotePad, isStrum: () => boole
     chords.push(parsed);
     input.value = "";
     render();
+    workspaceChanged();
     play(parsed, 2); // preview
   });
 
   return {
     chordAt: (index) => chords[index],
     play,
+    symbols: () => chords.map((c) => c.symbol),
+    applySymbols(symbols) {
+      chords.length = 0;
+      for (const s of symbols) {
+        const c = parseChord(s);
+        if (c) chords.push(c);
+      }
+      render();
+    },
   };
 }

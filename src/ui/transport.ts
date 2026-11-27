@@ -1,4 +1,5 @@
 import type { Player } from "../audio/player";
+import { workspaceChanged } from "./changes";
 import { $, fmt } from "./dom";
 import { Waveform } from "./waveform";
 
@@ -18,6 +19,8 @@ export interface Transport {
   seekBy(seconds: number): void;
   /** Redraws the play and loop buttons from the player's state. */
   refresh(): void;
+  /** Sets the loop without notifying (restoring a workspace). */
+  applyLoop(loop: { a: number; b: number; on: boolean }): void;
 }
 
 /** Waveform, transport buttons, A/B loop, pre-roll and the playhead render loop. */
@@ -28,6 +31,7 @@ export function setupTransport(player: Player): Transport {
       player.setLoop(a, b);
       player.setLoopOn(true);
       refreshLoop();
+      workspaceChanged();
     },
   });
 
@@ -61,6 +65,7 @@ export function setupTransport(player: Player): Transport {
       player.setLoop(now, b > now ? b : player.duration);
       player.setLoopOn(true);
       refreshLoop();
+      workspaceChanged();
     },
     setB() {
       const { a } = player.loop;
@@ -68,10 +73,12 @@ export function setupTransport(player: Player): Transport {
       player.setLoop(a < now ? a : 0, now);
       player.setLoopOn(true);
       refreshLoop();
+      workspaceChanged();
     },
     toggleLoop() {
       player.setLoopOn(!player.loop.on);
       refreshLoop();
+      workspaceChanged();
     },
     nudgeLoop(edge, delta) {
       const { a, b, on } = player.loop;
@@ -80,6 +87,7 @@ export function setupTransport(player: Player): Transport {
       const nb = edge === "b" ? Math.max(Math.min(player.duration, b + delta), a + NUDGE) : b;
       player.setLoop(na, nb);
       refreshLoop();
+      workspaceChanged();
       if (!player.playing) return;
       if (edge === "a") player.seekToLoopStart();
       else player.seek(Math.max(na, nb - 1));
@@ -92,6 +100,11 @@ export function setupTransport(player: Player): Transport {
     },
     refresh() {
       refreshPlay();
+      refreshLoop();
+    },
+    applyLoop({ a, b, on }) {
+      player.setLoop(a, b);
+      player.setLoopOn(on);
       refreshLoop();
     },
   };

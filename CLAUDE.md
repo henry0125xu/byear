@@ -58,6 +58,9 @@ Only pure logic is tested; sound quality and UI are judged by the user.
 | [src/ui/shortcuts.ts](src/ui/shortcuts.ts) | `setupShortcuts`: all global keys (keydown/keyup), held chord keys `1`–`9` |
 | [src/ui/fileInput.ts](src/ui/fileInput.ts) | `setupFileInput`: picker and drag-and-drop, decode |
 | [src/ui/dom.ts](src/ui/dom.ts) | `$`, `fmt`, `releaseOnPointerUp` |
+| [src/workspace/workspace.ts](src/workspace/workspace.ts) | Per-song `Workspace` format (versioned), `parseWorkspace` (validate, repair, defaults), storage key, export name. Pure, tested |
+| [src/ui/workspacePanel.ts](src/ui/workspacePanel.ts) | `setupWorkspace`: restore on file open, debounced auto-save to localStorage `byear.ws.<name>|<length>`, Export / Import buttons |
+| [src/ui/changes.ts](src/ui/changes.ts) | `workspaceChanged()` / `onWorkspaceChange()`: modules call it after a user change to per-song state |
 | [src/audio/player.ts](src/audio/player.ts) | `Player` (main thread): posts commands to the worklet, mirrors loop/speed/playing, extrapolates `currentTime` from the worklet's position reports. Fetches the Rubber Band .wasm and sends the bytes over |
 | [src/audio/player-worklet.ts](src/audio/player-worklet.ts) | AudioWorklet processor: runs `PlaybackEngine`, renders 128-frame quanta, reports `{pos, time}` every ~23 ms |
 | [src/audio/engine.ts](src/audio/engine.ts) | `PlaybackEngine` and `LoopSource` (own read head, wraps at A/B): transport, loop, pre-roll, stretcher. No DOM/worklet APIs, so Node can drive it |
@@ -81,6 +84,8 @@ Only pure logic is tested; sound quality and UI are judged by the user.
 - **Buttons are blurred after a click** so that Space doesn't trigger them again. Shortcuts are ignored while a text input or select has focus.
 - **Notes sound while held.** `Tones.start` returns `HeldNotes`; mouse-up (`releaseOnPointerUp`) or key-up (`1`–`9`) calls `release()`. Quick clicks still last `MIN_HOLD`; with Sustain on, released notes ring for up to `SUSTAIN_MAX`. Only the chord preview after "Add" uses a fixed duration.
 - **Pre-roll only applies to jumps to A** (Enter, Stop, play past B, nudging A, `seekToLoopStart`), never to loop wraps, so the loop itself doesn't change.
+- **Per-song vs. global state.** Loop, speed, transpose, cents, chord buttons and tonic are per song (workspace). Sound, engine, volumes, strum, sustain, pre-roll and note view are global (their own localStorage keys). A new per-song field needs: a field + default + repair in `parseWorkspace` (bump `WORKSPACE_VERSION` only for breaking changes), a test, `collect`/`apply` in `workspacePanel.ts`, and a `workspaceChanged()` call where the user changes it. `apply*` methods must not call `workspaceChanged()`.
+- **Opening a file with no saved workspace resets the per-song state to defaults** (chord buttons included, Decision #9). Import always applies to the currently open file (Decision #11).
 - **Volume in practice.** The user found the tones too quiet at gain 1.0. The range is now 0–200% (default 120%) with velocity 110 and a limiter.
 
 ## Status (as of 2026-11-27)
@@ -103,4 +108,4 @@ User feedback (2026-11-27): SoundTouch at 50% sounded worse than YouTube → Rub
 
 v0.1 is complete once the first Pages deploy is confirmed.
 
-Next: v0.2, planned 2026-11-27 (Decisions #12–15). Order: ~~split main.ts into modules~~ (done) → workspace save → tonic + drone → computer keyboard mode → hold mode → chord builder (structured, then manual). The user tries each step before it is committed.
+Next: v0.2, planned 2026-11-27 (Decisions #12–15). Order: ~~split main.ts into modules~~ (done) → ~~workspace save~~ (done, awaiting user check) → tonic + drone → computer keyboard mode → hold mode → chord builder (structured, then manual). The user tries each step before it is committed.

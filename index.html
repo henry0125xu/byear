@@ -13,6 +13,11 @@
         <input id="file" type="file" accept="audio/*" hidden />
       </label>
       <span id="file-name" class="muted">Drop an audio file anywhere</span>
+      <span class="spacer"></span>
+      <span id="ws-status" class="muted small"></span>
+      <button id="ws-export" class="small" title="Download this song's workspace as JSON">Export</button>
+      <button id="ws-import" class="small" title="Load a workspace JSON into the current song">Import</button>
+      <input id="ws-import-file" type="file" accept=".json,application/json" hidden />
     </header>
 
     <section class="panel">

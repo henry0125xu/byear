@@ -1,29 +1,52 @@
 import type { Player } from "../audio/player";
 import type { EngineId } from "../audio/stretch";
 import { INSTRUMENTS, isGuitar, isInstrumentId, type InstrumentId, type Tones } from "../audio/tones";
+import { workspaceChanged } from "./changes";
 import { $ } from "./dom";
+
+/** The per-song controls (saved in the workspace). */
+export interface SongControls {
+  /** 1 = 100%. */
+  speed: number;
+  semitones: number;
+  cents: number;
+}
 
 export interface Controls {
   /** Strum checkbox state. */
   readonly strum: boolean;
+  song(): SongControls;
+  /** Sets the per-song sliders without notifying (restoring a workspace). */
+  applySong(values: SongControls): void;
   /** Starts loading the current sound's samples, showing progress next to the select. */
   loadInstrument(): void;
 }
 
-function bindRange(id: string, apply: (v: number) => void): HTMLInputElement {
+/** Calls `apply` now and on every change. User changes also notify the workspace if `perSong`. */
+function bindRange(id: string, apply: (v: number) => void, perSong = false): HTMLInputElement {
   const el = $<HTMLInputElement>(id);
   const handler = () => apply(Number(el.value));
-  el.addEventListener("input", handler);
+  el.addEventListener("input", () => {
+    handler();
+    if (perSong) workspaceChanged();
+  });
   handler();
   return el;
 }
 
+/** Sets a range input and runs its handlers, without the workspace notification. */
+function setRange(el: HTMLInputElement, value: number, apply: (v: number) => void): void {
+  el.value = String(value);
+  apply(Number(el.value));
+}
+
 /** Speed, pitch, engine, volumes and the test-tone sound. */
 export function setupControls(ctx: AudioContext, player: Player, tones: Tones, isUnlocked: () => boolean): Controls {
-  const speedEl = bindRange("speed", (v) => {
+  const applySpeed = (v: number) => {
     player.speed = v / 100;
     $("speed-val").textContent = `${v}%`;
-  });
+  };
+  const speedEl = bindRange("speed", applySpeed, true);
   document.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach((btn) =>
     btn.addEventListener("click", () => {
       speedEl.value = btn.dataset.speed!;
@@ -58,16 +81,18 @@ export function setupControls(ctx: AudioContext, player: Player, tones: Tones, i
   function syncDetune(): void {
     tones.detuneCents = player.pitchOffsetCents;
   }
-  bindRange("semi", (v) => {
+  const applySemi = (v: number) => {
     player.semitones = v;
     $("semi-val").textContent = v > 0 ? `+${v}` : String(v);
     syncDetune();
-  });
-  bindRange("cents", (v) => {
+  };
+  const applyCents = (v: number) => {
     player.cents = v;
     $("cents-val").textContent = v > 0 ? `+${v}` : String(v);
     syncDetune();
-  });
+  };
+  const semiEl = bindRange("semi", applySemi, true);
+  const centsEl = bindRange("cents", applyCents, true);
   bindRange("rec-vol", (v) => player.output.gain.setTargetAtTime(v / 100, ctx.currentTime, 0.01));
   bindRange("tone-vol", (v) => {
     tones.volume.gain.setTargetAtTime(v / 100, ctx.currentTime, 0.01);
@@ -109,6 +134,12 @@ export function setupControls(ctx: AudioContext, player: Player, tones: Tones, i
   return {
     get strum() {
       return strumEl.checked;
+    },
+    song: () => ({ speed: player.speed, semitones: player.semitones, cents: player.cents }),
+    applySong({ speed, semitones, cents }) {
+      setRange(speedEl, Math.round(speed * 100), applySpeed);
+      setRange(semiEl, semitones, applySemi);
+      setRange(centsEl, cents, applyCents);
     },
     loadInstrument,
   };
