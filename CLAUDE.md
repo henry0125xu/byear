@@ -24,7 +24,8 @@ A personal web app for transcribing songs by ear (guitar-oriented) while trainin
 npm install
 npm run dev        # Vite dev server, http://localhost:5173
 dev.cmd            # same, for double-clicking on Windows: installs deps if missing, opens the browser
-npx tsc -p .       # typecheck (run after every change; there are no tests yet)
+npx tsc -p .       # typecheck (run after every change)
+npm test           # vitest: chords + playback engine, ~7 s (also runs in the Pages workflow before deploy)
 npm run build      # tsc + vite build → dist/
 ```
 
@@ -36,6 +37,14 @@ npm run build      # tsc + vite build → dist/
 - `smplr`: soundfont samples (MusyngKite / FluidR3, from gleitz.github.io) and multi-sampled electric pianos (from smpldsnds.github.io), loaded on first use, then cached via CacheStorage.
 - `tonal`: chord parsing and note math.
 - `vite.config.ts` sets `base: "./"` so the build works under `/byear/` on GitHub Pages. [.github/workflows/pages.yml](.github/workflows/pages.yml) builds and deploys on every push to `main` (Settings → Pages → Source: GitHub Actions).
+
+## Tests
+
+Only pure logic is tested; sound quality and UI are judged by the user.
+
+- [src/music/chords.test.ts](src/music/chords.test.ts): every symbol in Decision #4, slash and 6/9 handling, voicing shapes.
+- [src/audio/engine.test.ts](src/audio/engine.test.ts): drives `PlaybackEngine` in 128-frame quanta with a click track, for all three engines: playhead vs. audible clicks, first-pass loop resync, pre-roll, end of file, engine switch. Tolerances come from measured values; if a change makes one fail, find out why before loosening it.
+- `tsconfig.json` has `"types": []` so Node types stay out of app code; test files that need Node add `/// <reference types="node" />`.
 
 ## Layout
 

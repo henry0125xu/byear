@@ -22,7 +22,8 @@ export function parseChord(input: string): ParsedChord | null {
     bass = Note.get(candidate).pc;
     base = symbol.slice(0, slash);
   }
-  const c = Chord.get(base);
+  // tonal knows "C6/9" but only "Cm69" for the minor one; "69" works for both.
+  const c = Chord.get(base.replace(/6\/9$/, "69"));
   if (c.empty || !c.tonic) return null;
   return { symbol, root: c.tonic, bass, intervals: c.intervals };
 }
