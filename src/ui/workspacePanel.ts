@@ -25,7 +25,6 @@ export function setupWorkspace(transport: Transport, controls: Controls, chords:
   const status = $("ws-status");
   let current: { key: string; name: string; duration: number; loop: () => { a: number; b: number; on: boolean } } | null =
     null;
-  let tonic: string | null = null; // set from the UI in v0.2 step 2
   let saveTimer = 0;
 
   function say(text: string): void {
@@ -40,7 +39,6 @@ export function setupWorkspace(transport: Transport, controls: Controls, chords:
       loop: current.loop(),
       ...controls.song(),
       chords: chords.symbols().map((symbol) => ({ symbol })),
-      tonic,
     };
   }
 
@@ -48,7 +46,6 @@ export function setupWorkspace(transport: Transport, controls: Controls, chords:
     transport.applyLoop(ws.loop);
     controls.applySong(ws);
     chords.applySymbols(ws.chords.map((c) => c.symbol));
-    tonic = ws.tonic;
   }
 
   function save(): void {
@@ -78,6 +75,15 @@ export function setupWorkspace(transport: Transport, controls: Controls, chords:
     a.download = exportFileName(ws.file.name);
     a.click();
     URL.revokeObjectURL(url);
+  });
+
+  $("ws-reset").addEventListener("click", () => {
+    if (!current) return say("Open an audio file first");
+    if (!confirm("Reset this song's loop, speed, pitch, chords and tonic?")) return;
+    clearTimeout(saveTimer);
+    apply(defaultWorkspace(current.name, current.duration));
+    save();
+    say("Reset");
   });
 
   const importInput = $<HTMLInputElement>("ws-import-file");

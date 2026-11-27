@@ -52,7 +52,7 @@ Only pure logic is tested; sound quality and UI are judged by the user.
 |------|------|
 | [src/main.ts](src/main.ts) | Creates `AudioContext`, `Player`, `Tones`; audio unlock; calls the `setup*()` UI modules and wires them together |
 | [src/ui/transport.ts](src/ui/transport.ts) | `setupTransport`: waveform, play/stop, A/B loop, nudge, pre-roll (localStorage `byear.preRoll`), playhead render loop |
-| [src/ui/controls.ts](src/ui/controls.ts) | `setupControls`: speed, transpose, fine-tune, engine, volumes, sound, strum, sustain |
+| [src/ui/controls.ts](src/ui/controls.ts) | `setupControls`: speed, transpose, fine-tune, engine, volumes, tonic + drone, sound, strum, sustain |
 | [src/ui/notePad.ts](src/ui/notePad.ts) | `setupNotePad`: note grid / piano view toggle, note playing, `flash` |
 | [src/ui/chordPanel.ts](src/ui/chordPanel.ts) | `setupChordPanel`: chord entry form, chord buttons, voicing choice |
 | [src/ui/shortcuts.ts](src/ui/shortcuts.ts) | `setupShortcuts`: all global keys (keydown/keyup), held chord keys `1`–`9` |
@@ -66,6 +66,7 @@ Only pure logic is tested; sound quality and UI are judged by the user.
 | [src/audio/engine.ts](src/audio/engine.ts) | `PlaybackEngine` and `LoopSource` (own read head, wraps at A/B): transport, loop, pre-roll, stretcher. No DOM/worklet APIs, so Node can drive it |
 | [src/audio/protocol.ts](src/audio/protocol.ts) | Message types between `Player` and the worklet |
 | [src/audio/stretch.ts](src/audio/stretch.ts) | `Stretcher` interface; `RubberBandStretcher` (R2 / R3 HQ) and `SoundTouchStretcher`. Engine choice in localStorage `byear.engine` |
+| [src/audio/drone.ts](src/audio/drone.ts) | `Drone`: synth tonic drone (triangle + sine an octave down, low-passed, tonic in octave 3, optional fifth), fades in/out, `detuneCents` follows the recording |
 | [src/audio/tones.ts](src/audio/tones.ts) | `Tones`: smplr instruments (`INSTRUMENTS`: piano, electric pianos via `ElectricPiano`, several guitar sounds) → `volume` gain (0–2) → limiter (`output`). Choice in localStorage `byear.instrument` |
 | [src/music/chords.ts](src/music/chords.ts) | `parseChord`, `pianoVoicing`, `guitarVoicing` |
 | [src/ui/waveform.ts](src/ui/waveform.ts) | Canvas waveform: click to seek, drag to make a loop, drag edges to adjust |
@@ -79,13 +80,14 @@ Only pure logic is tested; sound quality and UI are judged by the user.
 - **Rubber Band alignment.** After every reset, `RubberBandStretcher.clear` feeds the preferred start pad of silence and discards the start delay, so output lines up with the seek point. `pending` is only right if that is kept.
 - **CPU and the 2.9 ms quantum.** Rubber Band runs in the AudioWorklet, which must finish each 128-frame quantum in about 2.9 ms. Feeding it only what `samples_required` asks for, at most `FEED_CHUNK` (256) frames at a time, keeps the work even; feeding a 512-frame minimum caused 60–120 late quanta per 6 s with R3 at 50% (Node simulation), now 1–2. If the user hears crackles, suggest the lighter engine first.
 - **Loop changes resync the buffer.** `PlaybackEngine.setLoop` and `setLoopOn` read `heardTime` *before* they change the loop (the estimate depends on the loop), then call `resyncToLoop`. Without that, the first pass plays past B. Keep this when touching loop code.
-- **Test tones follow the recording's pitch offset.** `tones.detuneCents = player.pitchOffsetCents` (transpose and cents). Chord and note labels always stay in the original key (Decision #2).
+- **Test tones and the drone follow the recording's pitch offset.** `syncDetune` in controls.ts sets `tones.detuneCents` and `drone.detuneCents` from `player.pitchOffsetCents` (transpose and cents). Chord and note labels always stay in the original key (Decision #2).
 - **Slash chords are split by hand** in `parseChord`, because tonal measures `G/B` intervals from the bass. `C6/9` is a chord type, not a slash chord.
-- **Buttons are blurred after a click** so that Space doesn't trigger them again. Shortcuts are ignored while a text input or select has focus.
+- **Buttons are blurred after a click, checkboxes and selects after a change,** so that Space plays/pauses instead of toggling them. Shortcuts are ignored while a text input or select has focus.
 - **Notes sound while held.** `Tones.start` returns `HeldNotes`; mouse-up (`releaseOnPointerUp`) or key-up (`1`–`9`) calls `release()`. Quick clicks still last `MIN_HOLD`; with Sustain on, released notes ring for up to `SUSTAIN_MAX`. Only the chord preview after "Add" uses a fixed duration.
 - **Pre-roll only applies to jumps to A** (Enter, Stop, play past B, nudging A, `seekToLoopStart`), never to loop wraps, so the loop itself doesn't change.
 - **Per-song vs. global state.** Loop, speed, transpose, cents, chord buttons and tonic are per song (workspace). Sound, engine, volumes, strum, sustain, pre-roll and note view are global (their own localStorage keys). A new per-song field needs: a field + default + repair in `parseWorkspace` (bump `WORKSPACE_VERSION` only for breaking changes), a test, `collect`/`apply` in `workspacePanel.ts`, and a `workspaceChanged()` call where the user changes it. `apply*` methods must not call `workspaceChanged()`.
-- **Opening a file with no saved workspace resets the per-song state to defaults** (chord buttons included, Decision #9). Import always applies to the currently open file (Decision #11).
+- **The drone always starts off** (not saved), so opening the app or a song never makes sound on a work machine. `+5th` and drone volume are global (`byear.droneFifth`, `byear.droneVol`); the tonic is per song.
+- **Opening a file with no saved workspace resets the per-song state to defaults** (chord buttons included, Decision #9). Import always applies to the currently open file (Decision #11). Reset (with a confirm) applies the defaults and saves.
 - **Volume in practice.** The user found the tones too quiet at gain 1.0. The range is now 0–200% (default 120%) with velocity 110 and a limiter.
 
 ## Status (as of 2026-11-27)
@@ -108,4 +110,4 @@ User feedback (2026-11-27): SoundTouch at 50% sounded worse than YouTube → Rub
 
 v0.1 is complete once the first Pages deploy is confirmed.
 
-Next: v0.2, planned 2026-11-27 (Decisions #12–15). Order: ~~split main.ts into modules~~ (done) → ~~workspace save~~ (done, awaiting user check) → tonic + drone → computer keyboard mode → hold mode → chord builder (structured, then manual). The user tries each step before it is committed.
+Next: v0.2, planned 2026-11-27 (Decisions #12–15). Order: ~~split main.ts into modules~~ (done) → ~~workspace save~~ (done) → ~~tonic + drone~~ (done, awaiting user check) → computer keyboard mode → hold mode → chord builder (structured, then manual). The user tries each step before it is committed.

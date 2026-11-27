@@ -4,8 +4,12 @@ import { NUDGE, type Transport } from "./transport";
 
 /** Global keyboard shortcuts. Ignored while a text input or select has focus. */
 export function setupShortcuts(transport: Transport, chords: ChordPanel): void {
-  // Don't leave buttons focused, or Space would also "click" them.
+  // Don't leave buttons, checkboxes or selects focused, or Space would toggle them instead of playing.
   document.addEventListener("click", (e) => (e.target as HTMLElement).closest("button")?.blur());
+  document.addEventListener("change", (e) => {
+    const el = e.target as HTMLElement;
+    if (el.tagName === "SELECT" || (el as HTMLInputElement).type === "checkbox") el.blur();
+  });
 
   // Chord keys 1–9 sound while held.
   const heldKeys = new Map<string, HeldNotes>();

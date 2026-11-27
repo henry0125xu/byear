@@ -1,3 +1,4 @@
+import type { Drone } from "../audio/drone";
 import type { Player } from "../audio/player";
 import type { EngineId } from "../audio/stretch";
 import { INSTRUMENTS, isGuitar, isInstrumentId, type InstrumentId, type Tones } from "../audio/tones";
@@ -10,6 +11,8 @@ export interface SongControls {
   speed: number;
   semitones: number;
   cents: number;
+  /** Pitch class, or null when not set. */
+  tonic: string | null;
 }
 
 export interface Controls {
@@ -40,8 +43,14 @@ function setRange(el: HTMLInputElement, value: number, apply: (v: number) => voi
   apply(Number(el.value));
 }
 
-/** Speed, pitch, engine, volumes and the test-tone sound. */
-export function setupControls(ctx: AudioContext, player: Player, tones: Tones, isUnlocked: () => boolean): Controls {
+/** Speed, pitch, engine, volumes, tonic + drone, and the test-tone sound. */
+export function setupControls(
+  ctx: AudioContext,
+  player: Player,
+  tones: Tones,
+  drone: Drone,
+  isUnlocked: () => boolean,
+): Controls {
   const applySpeed = (v: number) => {
     player.speed = v / 100;
     $("speed-val").textContent = `${v}%`;
@@ -77,9 +86,10 @@ export function setupControls(ctx: AudioContext, player: Player, tones: Tones, i
   engineEl.value = savedEngine && ENGINES.includes(savedEngine) ? savedEngine : "rubberband-hq";
   selectEngine(engineEl.value as EngineId);
 
-  // Test tones follow the recording's transpose + fine-tune, so labels stay in the original key.
+  // Test tones and the drone follow the recording's transpose + fine-tune; labels stay in the original key.
   function syncDetune(): void {
     tones.detuneCents = player.pitchOffsetCents;
+    drone.detuneCents = player.pitchOffsetCents;
   }
   const applySemi = (v: number) => {
     player.semitones = v;
@@ -127,6 +137,41 @@ export function setupControls(ctx: AudioContext, player: Player, tones: Tones, i
     if (isUnlocked()) loadInstrument();
   });
 
+  // Tonic (per song) and drone. The drone always starts off, so opening the app never makes sound;
+  // +5th and its volume are remembered.
+  const tonicEl = $<HTMLSelectElement>("tonic");
+  const droneEl = $<HTMLInputElement>("drone");
+  const fifthEl = $<HTMLInputElement>("drone-fifth");
+  function applyTonic(tonic: string | null): void {
+    tonicEl.value = tonic ?? "";
+    drone.tonic = tonic;
+    droneEl.disabled = !tonic;
+    if (!tonic) droneEl.checked = drone.on = false;
+  }
+  tonicEl.addEventListener("change", () => {
+    applyTonic(tonicEl.value || null);
+    workspaceChanged();
+  });
+  droneEl.addEventListener("change", () => {
+    if (droneEl.checked && ctx.state !== "running") void ctx.resume();
+    drone.on = droneEl.checked;
+  });
+  const FIFTH_KEY = "byear.droneFifth";
+  fifthEl.checked = localStorage.getItem(FIFTH_KEY) === "1";
+  drone.fifth = fifthEl.checked;
+  fifthEl.addEventListener("change", () => {
+    drone.fifth = fifthEl.checked;
+    localStorage.setItem(FIFTH_KEY, fifthEl.checked ? "1" : "0");
+  });
+  const DRONE_VOL_KEY = "byear.droneVol";
+  const droneVolEl = $<HTMLInputElement>("drone-vol");
+  droneVolEl.value = localStorage.getItem(DRONE_VOL_KEY) ?? droneVolEl.value;
+  bindRange("drone-vol", (v) => {
+    drone.output.gain.setTargetAtTime(v / 100, ctx.currentTime, 0.02);
+    $("drone-vol-val").textContent = `${v}%`;
+    localStorage.setItem(DRONE_VOL_KEY, String(v));
+  });
+
   $<HTMLInputElement>("sustain").addEventListener("change", (e) => {
     tones.sustain = (e.target as HTMLInputElement).checked;
   });
@@ -135,11 +180,12 @@ export function setupControls(ctx: AudioContext, player: Player, tones: Tones, i
     get strum() {
       return strumEl.checked;
     },
-    song: () => ({ speed: player.speed, semitones: player.semitones, cents: player.cents }),
-    applySong({ speed, semitones, cents }) {
+    song: () => ({ speed: player.speed, semitones: player.semitones, cents: player.cents, tonic: drone.tonic }),
+    applySong({ speed, semitones, cents, tonic }) {
       setRange(speedEl, Math.round(speed * 100), applySpeed);
       setRange(semiEl, semitones, applySemi);
       setRange(centsEl, cents, applyCents);
+      applyTonic(tonic);
     },
     loadInstrument,
   };

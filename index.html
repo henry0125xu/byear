@@ -17,6 +17,7 @@
       <span id="ws-status" class="muted small"></span>
       <button id="ws-export" class="small" title="Download this song's workspace as JSON">Export</button>
       <button id="ws-import" class="small" title="Load a workspace JSON into the current song">Import</button>
+      <button id="ws-reset" class="small" title="Reset this song's loop, speed, pitch, chords and tonic">Reset</button>
       <input id="ws-import-file" type="file" accept=".json,application/json" hidden />
     </header>
 
@@ -71,6 +72,22 @@
       <div class="ctl">
         <label>Tone vol <span id="tone-vol-val" class="mono">120%</span></label>
         <input id="tone-vol" type="range" min="0" max="200" value="120" />
+      </div>
+      <div class="ctl">
+        <label>Tonic</label>
+        <select id="tonic" title="Tonic of this song (saved with the song)">
+          <option value="">—</option>
+          <option>C</option><option>C#</option><option>Db</option><option>D</option><option>D#</option>
+          <option>Eb</option><option>E</option><option>F</option><option>F#</option><option>Gb</option>
+          <option>G</option><option>G#</option><option>Ab</option><option>A</option><option>A#</option>
+          <option>Bb</option><option>B</option>
+        </select>
+        <label class="inline"><input id="drone" type="checkbox" disabled /> Drone</label>
+        <label class="inline"><input id="drone-fifth" type="checkbox" /> +5th</label>
+      </div>
+      <div class="ctl">
+        <label>Drone vol <span id="drone-vol-val" class="mono">30%</span></label>
+        <input id="drone-vol" type="range" min="0" max="100" value="30" />
       </div>
       <div class="ctl">
         <label>Sound</label>
