@@ -4,6 +4,13 @@ A personal web app for transcribing songs by ear (guitar-oriented) while trainin
 
 **Read [doc/Proposal.md](doc/Proposal.md) first.** It holds the product scope, tonal-mode design, the Decisions table and the roadmap (v0.1 → v0.4). Don't re-open decisions recorded there unless the user asks.
 
+## Background
+
+- The user plays guitar and often transcribes songs (扒譜) and trains their ear during idle time at work: headphones on, no instrument, a work screen others can see. Keep the UI low-key; this is why the note grid is the default and the piano is optional.
+- The app grew out of the user's own transcription routine: hear → guess → verify against the recording → refine → write it down.
+- Simple first versions are preferred. Open-ended theory interpretation (secondary dominants, figured bass, key detection) is left to the user's judgment, not the app.
+- The folder was originally named `eardesk` (the old project name). Earlier session history may sit under that path.
+
 ## Working with the user
 
 - The user writes in Traditional Chinese (Taiwan). Reply in Traditional Chinese.
