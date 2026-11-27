@@ -35,9 +35,9 @@ const MIN_HOLD = 0.12;
 /** With sustain, released notes ring on naturally but are cut after this long. */
 const SUSTAIN_MAX = 6;
 
-/** Notes started by `start`; `release` is the key/mouse coming up. */
+/** Notes started by `start`; `release` is the key/mouse coming up (now, or at context time `at`). */
 export interface HeldNotes {
-  release(): void;
+  release(at?: number): void;
 }
 
 type Instrument = ReturnType<typeof Soundfont> | ReturnType<typeof ElectricPiano>;
@@ -101,7 +101,7 @@ export class Tones {
    * Starts notes that sound until `release()` (press-and-hold), or for a fixed
    * `duration` if given. Samples may still be loading; release still works.
    */
-  start(midi: number[], opts: { strum?: boolean; duration?: number } = {}): HeldNotes {
+  start(midi: number[], opts: { strum?: boolean; duration?: number; at?: number } = {}): HeldNotes {
     const sorted = [...midi].sort((a, b) => a - b);
     const stops: ((time?: number) => void)[] = [];
     let startedAt = -1;
@@ -116,7 +116,7 @@ export class Tones {
     };
 
     void this.load(this.current).then((inst) => {
-      startedAt = this.ctx.currentTime;
+      startedAt = Math.max(this.ctx.currentTime, opts.at ?? 0);
       sorted.forEach((note, i) => {
         stops.push(
           inst.start({
@@ -132,9 +132,9 @@ export class Tones {
     });
 
     return {
-      release: () => {
+      release: (at?: number) => {
         if (opts.duration !== undefined || releaseAt >= 0) return;
-        releaseAt = this.ctx.currentTime;
+        releaseAt = Math.max(this.ctx.currentTime, at ?? 0);
         if (startedAt >= 0) stopAll();
       },
     };

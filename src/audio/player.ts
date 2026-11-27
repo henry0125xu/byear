@@ -149,7 +149,8 @@ export class Player {
     this.snap = { pos, time: this.ctx.currentTime, floor: pos };
   }
 
-  private get latency(): number {
+  /** Output latency: audio rendered now is heard this much later. */
+  get latency(): number {
     return this.ctx.outputLatency || this.ctx.baseLatency || 0;
   }
 

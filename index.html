@@ -102,6 +102,9 @@
       <form id="chord-form" class="chord-form">
         <input id="chord-input" placeholder="Chord, e.g. Am7, F#maj7, G/B" autocomplete="off" />
         <button type="submit">Add</button>
+        <label class="inline" title="Click a chord to latch it: it is struck again each time the loop returns to A. Click it again to release.">
+          <input id="hold" type="checkbox" /> Hold
+        </label>
         <span id="chord-error" class="error small"></span>
       </form>
       <div id="chords" class="chords"></div>

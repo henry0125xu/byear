@@ -76,8 +76,8 @@ export function setupShortcuts(transport: Transport, chords: ChordPanel, pad: No
     const chordKey = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
     if (chordKey && (!playMode || e.shiftKey || e.code.startsWith("Numpad"))) {
       if (!e.repeat && !heldChords.has(e.code)) {
-        const c = chords.chordAt(Number(chordKey[1]) - 1);
-        if (c) heldChords.set(e.code, chords.play(c));
+        const held = chords.press(Number(chordKey[1]) - 1);
+        if (held) heldChords.set(e.code, held);
       }
       return;
     }
