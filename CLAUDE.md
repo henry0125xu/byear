@@ -16,7 +16,7 @@ A personal web app for transcribing songs by ear (guitar-oriented) while trainin
 - The user writes in Traditional Chinese (Taiwan). Reply in Traditional Chinese.
 - Code, comments, UI text and `doc/` are in English.
 - The user plays guitar and transcribes regularly. Domain terms (movable do, voicing, slash chords) need no explanation.
-- Commit only when asked. Commits go on `master` (no remote yet).
+- Commit only when asked. Commits go on `main`; remote `origin` is github.com/henry0125xu/byear (public, GPL-3.0-or-later because Rubber Band is GPL). Push only when asked.
 
 ## Commands
 
@@ -35,7 +35,7 @@ npm run build      # tsc + vite build → dist/
 - `soundtouchjs`: the fallback engine. There are no upstream types; see [src/soundtouch.d.ts](src/soundtouch.d.ts).
 - `smplr`: soundfont samples (MusyngKite / FluidR3, from gleitz.github.io) and multi-sampled electric pianos (from smpldsnds.github.io), loaded on first use, then cached via CacheStorage.
 - `tonal`: chord parsing and note math.
-- `vite.config.ts` sets `base: "./"` so the build can be served from GitHub Pages (decided hosting; not set up yet).
+- `vite.config.ts` sets `base: "./"` so the build works under `/byear/` on GitHub Pages. [.github/workflows/pages.yml](.github/workflows/pages.yml) builds and deploys on every push to `main` (Settings → Pages → Source: GitHub Actions).
 
 ## Layout
 
@@ -83,7 +83,8 @@ Done:
 
 User feedback (2026-11-27): SoundTouch at 50% sounded worse than YouTube → Rubber Band (Decision #6) "sounds much better". Loop seam and playhead were fine before the AudioWorklet move; recheck by ear after it.
 
-Remaining for v0.1:
-- GitHub Pages deploy (needs a remote repo from the user)
+- GitHub Pages deploy via Actions (2026-11-27)
+
+v0.1 is complete once the first Pages deploy is confirmed.
 
 Next after that: v0.2 (computer keyboard mode, chord builder, hold mode, tonic and drone, workspace save). See the roadmap in the proposal.
