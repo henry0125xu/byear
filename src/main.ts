@@ -35,7 +35,7 @@ const controls = setupControls(ctx, player, tones, drone, () => unlocked);
 const pad = setupNotePad(tones);
 const chords = setupChordPanel(tones, pad, () => controls.strum);
 const workspace = setupWorkspace(transport, controls, chords);
-setupShortcuts(transport, chords);
+setupShortcuts(transport, chords, pad);
 setupFileInput(ctx, (buffer, file) => {
   player.load(buffer);
   transport.setBuffer(buffer);

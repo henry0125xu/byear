@@ -126,7 +126,7 @@ input[type="text"], #chord-input {
   background: var(--key-black);
   border: 1px solid #000;
 }
-.key.active { background: var(--key-active) !important; }
+.key.active, .key.held { background: var(--key-active) !important; }
 
 .pad-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .pad-head button { padding: 2px 8px; }
@@ -147,7 +147,14 @@ input[type="text"], #chord-input {
 }
 .cell.sharp { background: color-mix(in srgb, var(--border) 45%, transparent); }
 .cell.empty { visibility: hidden; }
-.cell.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cell.active, .cell.held { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cell { position: relative; }
+.cell .keylabel {
+  position: absolute; top: 1px; right: 3px;
+  font-size: 9px; line-height: 1; opacity: 0.7;
+}
+#kb-mode.on { color: var(--accent); }
+body.play-mode #note-pad-panel { border-color: var(--accent); }
 
 .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
 .muted { color: var(--muted); }

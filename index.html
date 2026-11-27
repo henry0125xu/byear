@@ -107,9 +107,9 @@
       <div id="chords" class="chords"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="note-pad-panel">
       <div class="pad-head">
-        <span class="muted small">Notes</span>
+        <span class="muted small">Notes <span id="kb-mode" class="small">· Tab: play with keyboard</span></span>
         <button id="pad-toggle" class="small" title="Switch note view">Piano view</button>
       </div>
       <div id="note-grid"></div>
@@ -117,7 +117,7 @@
     </section>
 
     <footer class="muted small">
-      Space play/pause · Esc stop · [ ] set A/B · L loop · Enter jump to A · ←/→ seek 2s · Shift+←/→ move A · Ctrl+←/→ move B · 1–9 hold chord
+      Space play/pause · Esc stop · [ ] set A/B · L loop · Enter jump to A · ←/→ seek 2s · Shift+←/→ move A · Ctrl+←/→ move B · 1–9 hold chord · Tab keyboard play mode (Z and Q rows, -/= octave, Shift+1–9 chords)
     </footer>
 
     <script type="module" src="/src/main.ts"></script>

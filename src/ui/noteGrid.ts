@@ -78,6 +78,33 @@ export class NoteGrid {
     this.rangeLabel.textContent = `${this.low}–${high}`;
   }
 
+  /** Lit while held (separate from `flash`, so a flash timeout can't turn it off). */
+  setHeld(midi: number, held: boolean): void {
+    this.cells.get(midi)?.classList.toggle("held", held);
+  }
+
+  /** Shows computer-key labels on cells (play mode), or removes them. */
+  setKeyLabels(labels: Map<number, string> | null): void {
+    for (const [midi, cell] of this.cells) {
+      cell.querySelector(".keylabel")?.remove();
+      const label = labels?.get(midi);
+      if (!label) continue;
+      const tag = document.createElement("span");
+      tag.className = "keylabel";
+      tag.textContent = label;
+      cell.appendChild(tag);
+    }
+  }
+
+  /** Shifts the visible octaves, if needed, so `lowMidi..highMidi` is in view (as far as it fits). */
+  show(lowMidi: number, highMidi: number): void {
+    const lo = Math.floor(lowMidi / 12) - 1;
+    const hi = Math.floor(highMidi / 12) - 1;
+    if (lo >= this.low && hi <= this.low + VISIBLE_ROWS - 1) return;
+    this.low = lo < this.low ? lo : hi - VISIBLE_ROWS + 1;
+    this.shift(0);
+  }
+
   flash(midis: number[], ms = 400): void {
     for (const m of midis) {
       const el = this.cells.get(m);

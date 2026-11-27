@@ -55,7 +55,8 @@ Only pure logic is tested; sound quality and UI are judged by the user.
 | [src/ui/controls.ts](src/ui/controls.ts) | `setupControls`: speed, transpose, fine-tune, engine, volumes, tonic + drone, sound, strum, sustain |
 | [src/ui/notePad.ts](src/ui/notePad.ts) | `setupNotePad`: note grid / piano view toggle, note playing, `flash` |
 | [src/ui/chordPanel.ts](src/ui/chordPanel.ts) | `setupChordPanel`: chord entry form, chord buttons, voicing choice |
-| [src/ui/shortcuts.ts](src/ui/shortcuts.ts) | `setupShortcuts`: all global keys (keydown/keyup), held chord keys `1`–`9` |
+| [src/ui/shortcuts.ts](src/ui/shortcuts.ts) | `setupShortcuts`: all global keys (keydown/keyup), command / play mode (Tab), held chord keys `1`–`9`, held note keys |
+| [src/music/keyboard.ts](src/music/keyboard.ts) | Play-mode layout as data (`PLAY_KEYS` by `KeyboardEvent.code`), octave shift, key labels. Pure, tested |
 | [src/ui/fileInput.ts](src/ui/fileInput.ts) | `setupFileInput`: picker and drag-and-drop, decode |
 | [src/ui/dom.ts](src/ui/dom.ts) | `$`, `fmt`, `releaseOnPointerUp` |
 | [src/workspace/workspace.ts](src/workspace/workspace.ts) | Per-song `Workspace` format (versioned), `parseWorkspace` (validate, repair, defaults), storage key, export name. Pure, tested |
@@ -84,6 +85,7 @@ Only pure logic is tested; sound quality and UI are judged by the user.
 - **Slash chords are split by hand** in `parseChord`, because tonal measures `G/B` intervals from the bass. `C6/9` is a chord type, not a slash chord.
 - **Buttons are blurred after a click, checkboxes and selects after a change,** so that Space plays/pauses instead of toggling them. Shortcuts are ignored while a text input or select has focus.
 - **Notes sound while held.** `Tones.start` returns `HeldNotes`; mouse-up (`releaseOnPointerUp`) or key-up (`1`–`9`) calls `release()`. Quick clicks still last `MIN_HOLD`; with Sustain on, released notes ring for up to `SUSTAIN_MAX`. Only the chord preview after "Add" uses a fixed duration.
+- **Keyboard modes (Decisions #8, #12).** Tab toggles command / play mode; it always starts in command mode. Play mode matches physical keys (`e.code`), so IME and Caps Lock don't change notes; any other letter does nothing there, so a new letter shortcut is command-mode only. Space, `[` `]`, Enter, arrows, Esc and numpad `1`–`9` work in both; digit `1`–`9` chords are command mode only, `Shift+1`–`9` in play mode (digits are notes there). Held keys are tracked by `e.code`. Leaving play mode releases held notes.
 - **Pre-roll only applies to jumps to A** (Enter, Stop, play past B, nudging A, `seekToLoopStart`), never to loop wraps, so the loop itself doesn't change.
 - **Per-song vs. global state.** Loop, speed, transpose, cents, chord buttons and tonic are per song (workspace). Sound, engine, volumes, strum, sustain, pre-roll and note view are global (their own localStorage keys). A new per-song field needs: a field + default + repair in `parseWorkspace` (bump `WORKSPACE_VERSION` only for breaking changes), a test, `collect`/`apply` in `workspacePanel.ts`, and a `workspaceChanged()` call where the user changes it. `apply*` methods must not call `workspaceChanged()`.
 - **The drone always starts off** (not saved), so opening the app or a song never makes sound on a work machine. `+5th` and drone volume are global (`byear.droneFifth`, `byear.droneVol`); the tonic is per song.
@@ -110,4 +112,4 @@ User feedback (2026-11-27): SoundTouch at 50% sounded worse than YouTube → Rub
 
 v0.1 is complete once the first Pages deploy is confirmed.
 
-Next: v0.2, planned 2026-11-27 (Decisions #12–15). Order: ~~split main.ts into modules~~ (done) → ~~workspace save~~ (done) → ~~tonic + drone~~ (done, awaiting user check) → computer keyboard mode → hold mode → chord builder (structured, then manual). The user tries each step before it is committed.
+Next: v0.2, planned 2026-11-27 (Decisions #12–15). Order: ~~split main.ts into modules~~ (done) → ~~workspace save~~ (done) → ~~tonic + drone~~ (done) → ~~computer keyboard mode~~ (done, awaiting user check) → hold mode → chord builder (structured, then manual). The user tries each step before it is committed.

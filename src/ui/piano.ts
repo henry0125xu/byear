@@ -32,6 +32,11 @@ export class Piano {
     if (el) this.root.scrollLeft = el.offsetLeft - this.root.clientWidth / 2;
   }
 
+  /** Lit while held (separate from `flash`). */
+  setHeld(midi: number, held: boolean): void {
+    this.keys.get(midi)?.classList.toggle("held", held);
+  }
+
   flash(midis: number[], ms = 400): void {
     for (const m of midis) {
       const el = this.keys.get(m);
