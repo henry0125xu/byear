@@ -42,11 +42,24 @@ export interface HeldNotes {
 
 type Instrument = ReturnType<typeof Soundfont> | ReturnType<typeof ElectricPiano>;
 
+/** Input range the saturator covers (the curve spans ±1, so the signal is scaled down by this first). */
+const SATURATION_RANGE = 4;
+
+/** WaveShaper curve: y = tanh(x) for x in ±SATURATION_RANGE. */
+export function tanhCurve(points = 4097): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(points);
+  for (let i = 0; i < points; i++) {
+    const x = ((i / (points - 1)) * 2 - 1) * SATURATION_RANGE;
+    curve[i] = Math.tanh(x);
+  }
+  return curve;
+}
+
 /** Sampled test tones. Detune follows the recording's transpose + fine-tune. */
 export class Tones {
-  /** Volume control (0–2). Feeds a limiter so loud chords don't clip. */
+  /** Volume control (0–2). Feeds a soft saturator so loud chords never clip. */
   readonly volume: GainNode;
-  readonly output: DynamicsCompressorNode;
+  readonly output: AudioNode;
   private storage = new CacheStorage("byear-samples");
   private instruments = new Map<InstrumentId, Promise<Instrument>>();
   current: InstrumentId = "piano";
@@ -55,14 +68,16 @@ export class Tones {
   sustain = false;
 
   constructor(private ctx: AudioContext) {
+    // A limiter capped the level at about 120% (the user heard no change above it). tanh keeps
+    // getting fuller up to 200% and can't exceed ±1; pushed hard it adds mild, warm saturation.
     this.volume = ctx.createGain();
-    this.output = ctx.createDynamicsCompressor();
-    this.output.threshold.value = -6;
-    this.output.knee.value = 4;
-    this.output.ratio.value = 12;
-    this.output.attack.value = 0.002;
-    this.output.release.value = 0.15;
-    this.volume.connect(this.output);
+    const pre = ctx.createGain();
+    pre.gain.value = 1 / SATURATION_RANGE;
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = tanhCurve();
+    shaper.oversample = "4x";
+    this.volume.connect(pre).connect(shaper);
+    this.output = shaper;
   }
 
   /** Starts loading an instrument; resolves when it can play. */

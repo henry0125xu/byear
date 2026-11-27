@@ -90,7 +90,7 @@ Only pure logic is tested; sound quality and UI are judged by the user.
 - **Per-song vs. global state.** Loop, speed, transpose, cents, chord buttons and tonic are per song (workspace). Sound, engine, volumes, strum, sustain, pre-roll and note view are global (their own localStorage keys). A new per-song field needs: a field + default + repair in `parseWorkspace` (bump `WORKSPACE_VERSION` only for breaking changes), a test, `collect`/`apply` in `workspacePanel.ts`, and a `workspaceChanged()` call where the user changes it. `apply*` methods must not call `workspaceChanged()`.
 - **The drone always starts off** (not saved), so opening the app or a song never makes sound on a work machine. `+5th` and drone volume are global (`byear.droneFifth`, `byear.droneVol`); the tonic is per song.
 - **Opening a file with no saved workspace resets the per-song state to defaults** (chord buttons included, Decision #9). Import always applies to the currently open file (Decision #11). Reset (with a confirm) applies the defaults and saves.
-- **Volume in practice.** The user found the tones too quiet at gain 1.0. The range is now 0–200% (default 120%) with velocity 110 and a limiter.
+- **Volume in practice.** The user found the tones too quiet at gain 1.0, so the range is 0–200% (default 120%) with velocity 110. The tones end in a tanh soft saturator (`tanhCurve`), not a limiter: a limiter (−6 dB, 12:1) made everything above ~120% sound the same. Unity gain for quiet signals, never above ±1.
 
 ## Status (as of 2026-11-27)
 
